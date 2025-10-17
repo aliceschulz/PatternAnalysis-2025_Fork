@@ -133,3 +133,54 @@ class VectorQuantiser(nn.Module):
             VQ_layer_losses = codebook_loss + self._commitment_cost*commitment_loss
 
             return VQ_layer_losses, quantised.permute(0,3,1,2), encodings
+
+
+# Encoder and decoder architecture, which will be based on 
+# residual blocks, akin to ResNet - as many implementations in 
+# practice use this method. 
+class Residual(nn.Module):
+    """A class to define a single residual block.
+    
+    This is a generic residual block that can be re-used. Outputs
+    from each part are passed along each module in a sequential manner.
+    """
+    def __init__(self, in_channels, num_hiddens, num_residual_hiddens):
+        super(Residual, self).__init__()
+        self._block = nn.Sequential(
+            nn.ReLU(True),
+            nn.Conv2d(in_channels=in_channels,
+                      out_channels=num_residual_hiddens,
+                      kernel_size=3, stride=1, padding=1, bias=False),
+            nn.ReLU(True),
+            nn.Conv2d(in_channels=num_residual_hiddens,
+                      out_channels=num_hiddens,
+                      kernel_size=1, stride=1, bias=False)
+        )
+    
+    def forward(self, x):
+        return x + self._block(x)
+
+
+class ResidualStack(nn.Module):
+    """Defines a stack of residual blocks."""
+    def __init__(self, in_channels, num_hiddens, num_residual_layers,
+                  num_residual_hiddens):
+        super(ResidualStack, self).__init__()
+        self._num_residual_layers = num_residual_layers
+        # The below line defines a Residual block for each layer (given 
+        # by the number of specified residual layers). Each of these
+        # blocks is then stored in a ModuleList. 
+        self._layers = nn.ModuleList([Residual(in_channels, 
+                                               num_hiddens, 
+                                               num_residual_hiddens)
+                             for _ in range(self._num_residual_layers)])
+
+    def forward(self, x):
+        for i in range(self._num_residual_layers):
+            x = self._layers[i](x) # each element in self._layers is 
+                                    # a residual block. The loop performs
+                                    # the forward pass through each block, 
+                                    # sequentially, and then the next line 
+                                    # returns the activation function ReLU
+                                    # applied to the final output. 
+        return F.relu(x)
