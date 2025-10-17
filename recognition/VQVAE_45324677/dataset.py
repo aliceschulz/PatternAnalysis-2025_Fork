@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 print('Defining data directories...')
 dir_test = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_test"
 dir_train = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_train"
-dir_validate = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_validate"
+dir_validation = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_validate"
 
 # convert to one-hot encoded: for categorical data. 
 def to_channels(arr: np.ndarray, dtype=np.uint8) -> np.ndarray:
@@ -107,7 +107,15 @@ def load_data_2D(imageNames, normImage=False, categorical=False,
     
 img_names = os.listdir(dir_train) # provides a list of all filenames.
 img_paths = [os.path.join(dir_train, name) for name in img_names]
-image_data = load_data_2D(img_paths)
+image_training_data = load_data_2D(img_paths)
+
+img_names = os.listdir(dir_test)
+img_paths = [os.path.join(dir_test, name) for name in img_names]
+image_test_data = load_data_2D(img_paths)
+
+img_names = os.listdir(dir_validation)
+img_paths = [os.path.join(dir_validation, name) for name in img_names]
+image_validation_data = load_data_2D(img_paths)
 
 # define a function for making a few plots of the original image:
 def plt_original_imgs(image, save_path, index):
@@ -141,4 +149,17 @@ for i in range(10):
             index=i
             )
     
-    
+
+# next, implement the proper data loader to be implemented with the model.
+training_loader = DataLoader(image_training_data, 
+                             batch_size=batch_size,
+                             shuffle=True)
+
+
+test_loader = DataLoader(image_test_data, 
+                         batch_size=batch_size,
+                         shuffle=False)
+
+validation_loader = DataLoader(image_validation_data,
+                               batch_size=32,
+                               shuffle=True)
