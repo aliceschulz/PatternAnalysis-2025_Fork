@@ -1,22 +1,25 @@
-# This file contains the data loader for loading and preprocessing the data.
-# Data is sourced from the HipMRI Study on Prostate Cancer. 
-# rangpur directories:
+# This file contains the data loader for loading and preprocessing the data, as 
+# well as various other helper functions for plotting and loading. 
+# Data is sourced from the HipMRI Study on Prostate Cancer, and available in
+# the COMP3710 folder on the Rangpur cluster. 
 
-# test: "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_test"
-# train: "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_train"
-# validate: "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_validate"
-
+import os
 import numpy as np
 import nibabel as nib
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 print('Defining data directories...')
 dir_test = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_test"
 dir_train = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_train"
 dir_validate = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_validate"
 
+# convert to one-hot encoded: for categorical data. 
 def to_channels(arr: np.ndarray, dtype=np.uint8) -> np.ndarray:
     """Converts a 2D array of categorical labels to a one-hot encoded 3D array.
+
+    This code was provided by Shakes Chandra in the Open Source Project 
+        documentation: COMP3710_Report_v1.64_Final.pdf
     
     Args: arr (np.ndarray): a 2D array of categorical labels
           dtype: data type of the output array
@@ -41,8 +44,8 @@ def load_data_2D(imageNames, normImage=False, categorical=False,
         documentation: COMP3710_Report_v1.64_Final.pdf
 
     Args: imageNames: list of str: list of file paths to Nifti images
-          normImage (bool): whether to normalise the image in 
-            [0,1] (subtract of mean, divide by std)
+          normImage (bool): whether to normalise the image. Normalises 
+            to mean 0, std 1 over entire image (subtract mean, divide by std)
           categorical (bool): whether the images are categorical 
             labels (if so, one-hot encode them)
           dtype: data type of output array
@@ -53,6 +56,7 @@ def load_data_2D(imageNames, normImage=False, categorical=False,
     Returns: np.ndarray: array of loaded images. 
     """
     affines = []
+    num_mismatch = 0
 
     # get fixed size of images - how many images
     num = len(imageNames)
@@ -71,6 +75,10 @@ def load_data_2D(imageNames, normImage=False, categorical=False,
 
     for i, inName in enumerate(tqdm(imageNames)):
         niftiImage = nib.load(inName)
+        if niftiImage.shape != first_case.shape:
+            print(f"Image shape mismatch for {inName}, skipping this image.")
+            num_mismatch += 1
+            continue
         inImage = niftiImage.get_fdata(caching='unchanged') # read disk only
         affine = niftiImage.affine
         if len(inImage.shape) == 3:
@@ -82,17 +90,55 @@ def load_data_2D(imageNames, normImage=False, categorical=False,
             inImage = (inImage - inImage.mean()) / inImage.std()
         if categorical:
             inImage = utils.to_channels(inImage, dtype=dtype)
-            images[i, :, :, :] = inImage
+            images[i,:,:,:] = inImage
         else:
-            images[i, :, :] = inImage
+            images[i,:,:] = inImage
 
         affines.append(affine)
         if i > 20 and early_stop:
             break
 
     if getAffines:
+        print(f"Number of dimension-mismatched images: {num_mismatch}")
         return images, affines
     else: 
+        print(f"Number of dimension-mismatched images: {num_mismatch}")
         return images
+    
+img_names = os.listdir(dir_train) # provides a list of all filenames.
+img_paths = [os.path.join(dir_train, name) for name in img_names]
+image_data = load_data_2D(img_paths)
+
+# define a function for making a few plots of the original image:
+def plt_original_imgs(image, save_path, index):
+    """Plot original HipMRI Study on Prostate Cancer images.
+
+    Args: 
+        image: np.ndarray, image to be plotted. Often will be output from 
+               load_data_2D function.
+        save_path: str, directory to the save location
+        index: int, image index. 
+
+    Returns:
+        None, but saves plot to specified location.
+    """
+    if image.ndim == 3:
+        image = image.squeeze()
+
+    plt.imshow(image, cmap='gray')
+    plt.title('Image of HipMRI Study on Prostate Cancer')
+    plt.axis('off')
+
+    os.makedirs(save_path, exist_ok=True)
+    output_file = os.path.join(save_path, f'HipMRI_img_{index}.png')
+    plt.savefig(output_file, bbox_inches='tight')
+    plt.close()
+
+for i in range(10):
+    plt_original_imgs(
+            image=image_data[i],
+            save_path='/home/Student/s4532467/plots',
+            index=i
+            )
     
     
