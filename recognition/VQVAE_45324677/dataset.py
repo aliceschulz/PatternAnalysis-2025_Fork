@@ -8,11 +8,16 @@ import numpy as np
 import nibabel as nib
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import utils
+from torch.utils.data import DataLoader
 
 print('Defining data directories...')
 dir_test = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_test"
 dir_train = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_train"
 dir_validation = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_validate"
+
+# Hyperparameters
+batch_size = 32
 
 # convert to one-hot encoded: for categorical data. 
 def to_channels(arr: np.ndarray, dtype=np.uint8) -> np.ndarray:
@@ -144,7 +149,7 @@ def plt_original_imgs(image, save_path, index):
 
 for i in range(10):
     plt_original_imgs(
-            image=image_data[i],
+            image=image_training_data[i],
             save_path='/home/Student/s4532467/plots',
             index=i
             )
