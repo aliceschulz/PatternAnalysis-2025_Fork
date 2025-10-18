@@ -27,7 +27,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 import torch.optim as optim
 
 # set device to allow GPU computations
@@ -74,7 +73,9 @@ class VectorQuantiser(nn.Module):
             """Defines the forward pass for the Vector Quantiser.
             
             Each forward pass will include: 
-                - re-shaping of input to the appropriate shape
+                - re-shaping of input to the appropriate shape (note: 
+                    the 'inputs' come from the encoder, they are not
+                    directly the images themselves)
                 - calculation of distance between point and 
                 embedding vector
                 - determining which is the closest embedding vector
@@ -237,3 +238,58 @@ class Encoder(nn.Module):
             return x
         
 
+class Decoder(nn.Module):
+    """Defines the Decoder module of the VQVAE model.
+    
+    The decoder takes as input the discrete latent embeddings,
+    and through a series of convolutional upsampling, attempts
+    to reconstruct the original input.
+    """
+    def __init__(self, in_channels, num_hidden, num_resid_layers, 
+                 num_resid_hiddens):
+        """
+        Args:
+            in_channels (int): number of input channels
+            num_hidden (int): number of hideen??
+            num_resid_layers (int):
+            num_resid_hiddens (int):
+        """
+        super(Decoder, self).__init__()
+
+        self._conv1 = nn.Conv2d(in_channels=in_channels,
+                                out_chanels=num_hidden,
+                                kernel_size=3,
+                                stride=1,
+                                padding=1)
+        
+        self._residual_stack = ResidualStack(in_channels=num_hidden,
+                            num_hiddens=num_hidden,
+                            num_resid_layers=num_resid_layers,
+                            num_resid_hiddens=num_resid_hiddens)
+        
+        self._deconv1 = nn.ConvTranspose2d(in_channels=num_hidden,
+                                           out_channels=num_hidden//2,
+                                           kernel_size=4,
+                                           stride=2,
+                                           padding=1)
+        
+        self._deconv2 = nn.ConvTranspose2d(in_channels=num_hidden//2,
+                                           out_channels=1,
+                                           kernel_size=4,
+                                           stride=2,
+                                           padding=1)
+        
+        def forward(self, inputs):
+            """Forward pass for the decoder.
+
+            Passes inputs through the first convolutional layer, then
+            the residual stack, followed by the final deconvoltuion 
+            layers and an appropriate activation layer. 
+            """
+            x = self._conv1(inputs)
+            x = self._residual_stack(x)
+
+            x = F.relu(self._deconv1(x))
+            x = self._deconv2(x)
+
+            return x
