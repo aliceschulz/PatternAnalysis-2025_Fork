@@ -160,23 +160,22 @@ class Residual(nn.Module):
     def forward(self, x):
         return x + self._block(x)
 
-
 class ResidualStack(nn.Module):
     """Defines a stack of residual blocks."""
-    def __init__(self, in_channels, num_hiddens, num_residual_layers,
-                  num_residual_hiddens):
+    def __init__(self, in_channels, num_hiddens, num_resid_layers,
+                  num_resid_hiddens):
         super(ResidualStack, self).__init__()
-        self._num_residual_layers = num_residual_layers
+        self._num_resid_layers = num_resid_layers
         # The below line defines a Residual block for each layer (given 
         # by the number of specified residual layers). Each of these
         # blocks is then stored in a ModuleList. 
         self._layers = nn.ModuleList([Residual(in_channels, 
                                                num_hiddens, 
-                                               num_residual_hiddens)
-                             for _ in range(self._num_residual_layers)])
+                                               num_resid_hiddens)
+                             for _ in range(self._num_resid_layers)])
 
     def forward(self, x):
-        for i in range(self._num_residual_layers):
+        for i in range(self._num_resid_layers):
             x = self._layers[i](x) # each element in self._layers is 
                                     # a residual block. The loop performs
                                     # the forward pass through each block, 
@@ -184,3 +183,57 @@ class ResidualStack(nn.Module):
                                     # returns the activation function ReLU
                                     # applied to the final output. 
         return F.relu(x)
+
+
+# Next, define the encoder and decoder classes
+# Together with the VQ component, these form the archicture
+# of the VQVAE model. 
+
+class Encoder(nn.Module):
+    """Defines the Encoder module of the VQVAE model.
+    
+    The encoder takes, as input, HipMRI image data and encodes
+    this via a CNN framework into a discrete latent representation.
+    
+    While the VQ module determines the closest embedding vector, and 
+    sets the encoder output to this, the encoder is responsible for
+    the series of convolutional downsamplings and extraction of 
+    features from the input data.
+    """
+    def __init__(self, in_channels, num_hidden, num_resid_layers, 
+                 num_resid_hiddens):
+        super(Encoder, self).__init__()
+
+        self._conv1 = nn.Conv2d(in_channels=in_channels,
+                                out_channels=num_hidden//2,
+                                kernel_size=4,
+                                stride=2,
+                                padding=1)
+
+        self._conv2 = nn.Conv2d(in_channels=num_hidden//2,
+                                out_channels=num_hidden,
+                                kernel_size=4,
+                                stride=2,
+                                padding=1)
+
+        self._conv3 = nn.Conv2d(in_channels=num_hidden,
+                                out_channels=num_hidden,
+                                kernel_size=3,
+                                stride=1,
+                                padding=1)
+        
+        self._residual_stack = ResidualStack(in_channels=num_hidden,
+                                             num_hiddens=num_hidden,
+                                             num_resid_layers=num_resid_layers,
+                                             num_resid_hiddens=num_resid_hiddens)
+        
+        def forward(self, inputs):
+            """Forward pass for encoder.
+            """
+            x = F.relu(self._conv1(inputs))
+            x = F.relu(self._conv2(x))
+
+            x = self._residual_stack(self._conv3(x))
+            return x
+        
+
