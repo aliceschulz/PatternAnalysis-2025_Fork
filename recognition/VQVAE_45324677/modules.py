@@ -6,6 +6,7 @@
 # 1) a Vector Quantiser class. 
 # 2) An encoder class.
 # 3) A decoder class. 
+# 4) A Model class that puts the components together.
 # a lot of sources recommend or utilise residual connections in the
 # encoder blocks and decoder blocks (similar to ResNet), so we will 
 # leverage off this and also utilise some residual blocks. 
@@ -18,11 +19,30 @@
 # - the decoder produces the final output. 
 
 # Hyperparameters that will need successive tuning:
-# - num_embeddings (number of embedding vectors K)
+# - num_embeddings (number of embedding vectors K in the codebook)
 #   -> increasing this increases the capacity in the info-bottleneck
+#   Sources say there is a trade-off between num_embeddings and
+#   embedding_dim. 
+
 # - embedding_dim (dimensionality D of each embedding vector)
 #   -> D does not change the capacity in the information-bottleneck
+
 # - commitment_cost (beta, the weighting factor for commitment loss term)
+
+# - num_resid_layers (number of residual layers in encoder/decoder residual
+#   stacks. Sources online suggest a number between 3-9, with greater 
+#   reconstruction quality generally obtained with a larger number. 
+
+# - num_hidden. The number of channels in the hidden layers of the encoder
+#   and decoder. Defines the dimensionality of the feature maps, and dictates 
+#   the model's capacity to learn and represent complex patterns in the data 
+#   by controlling the size of the intermediate representations. Sources say
+#   that generally a larger value can lead to better reconstruction quality. 
+
+# - num_resid_hiddens. Analagous to num_hidden, but for the residual stack/blocks. 
+#   So the number of channels in the hidden layers of each residual block. 
+#   May be a good idea to gradually increase the number of channels as the 
+#   network gets deeper. 
 
 import torch
 import torch.nn as nn
@@ -145,16 +165,16 @@ class Residual(nn.Module):
     This is a generic residual block that can be re-used. Outputs
     from each part are passed along each module in a sequential manner.
     """
-    def __init__(self, in_channels, num_hiddens, num_residual_hiddens):
+    def __init__(self, in_channels, num_hidden, num_resid_hiddens):
         super(Residual, self).__init__()
         self._block = nn.Sequential(
             nn.ReLU(True),
             nn.Conv2d(in_channels=in_channels,
-                      out_channels=num_residual_hiddens,
+                      out_channels=num_resid_hiddens,
                       kernel_size=3, stride=1, padding=1, bias=False),
             nn.ReLU(True),
-            nn.Conv2d(in_channels=num_residual_hiddens,
-                      out_channels=num_hiddens,
+            nn.Conv2d(in_channels=num_resid_hiddens,
+                      out_channels=num_hidden,
                       kernel_size=1, stride=1, bias=False)
         )
     
@@ -163,15 +183,17 @@ class Residual(nn.Module):
 
 class ResidualStack(nn.Module):
     """Defines a stack of residual blocks."""
-    def __init__(self, in_channels, num_hiddens, num_resid_layers,
+    def __init__(self, in_channels, num_hidden, num_resid_layers,
                   num_resid_hiddens):
         super(ResidualStack, self).__init__()
         self._num_resid_layers = num_resid_layers
         # The below line defines a Residual block for each layer (given 
         # by the number of specified residual layers). Each of these
         # blocks is then stored in a ModuleList. 
+        # num_resid_layers is the number of Residual blocks in the 
+        # residual stack. 
         self._layers = nn.ModuleList([Residual(in_channels, 
-                                               num_hiddens, 
+                                               num_hidden, 
                                                num_resid_hiddens)
                              for _ in range(self._num_resid_layers)])
 
@@ -224,7 +246,7 @@ class Encoder(nn.Module):
                                 padding=1)
         
         self._residual_stack = ResidualStack(in_channels=num_hidden,
-                                             num_hiddens=num_hidden,
+                                             num_hidden=num_hidden,
                                              num_resid_layers=num_resid_layers,
                                              num_resid_hiddens=num_resid_hiddens)
         
@@ -263,7 +285,7 @@ class Decoder(nn.Module):
                                 padding=1)
         
         self._residual_stack = ResidualStack(in_channels=num_hidden,
-                            num_hiddens=num_hidden,
+                            num_hidden=num_hidden,
                             num_resid_layers=num_resid_layers,
                             num_resid_hiddens=num_resid_hiddens)
         
@@ -293,3 +315,55 @@ class Decoder(nn.Module):
             x = self._deconv2(x)
 
             return x
+        
+# Next, define the Model class that makes use of each
+# of these components to construct the final VQVAE structure.
+class Model(nn.Module):
+    def __init__(self, num_hidden, num_resid_layers, 
+                 num_resid_hiddens, num_embeddings, 
+                 embedding_dim, commitment_cost):
+        super(Model, self).__init__()
+
+        self._encoder = Encoder(in_channels=1, num_hidden, 
+                                num_resid_layers, num_resid_hiddens)
+        
+        # purpose of the below layer??
+        self._pre_VQ_conv = nn.Conv2d(in_channels=num_hidden,
+                                      out_channels=embedding_dim,
+                                      kernel_size=1, stride=1)
+        
+        self._VQ = VectorQuantiser(num_embeddings, embedding_dim,
+                                   commitment_cost)
+        
+        self._decoder = Decoder(in_channels=embedding_dim, num_hidden,
+                                num_resid_layers, num_resid_hiddens)
+        
+        def forward(self, x):
+            """Forward pass through the entire VQVAE model as a whole.
+            
+            First we create an encoder class, then use an additional 
+             convolution step prior to passing encoder output through
+             the vector quantiser. From the VQ layer we also obtain the 
+             codebook loss and commitment loss, the decoder input, 
+             and the encodings. Then, the decoder input is fed to the 
+             decoder, and from here the reconstructed version of the 
+             original input is obtained.
+            """
+            z = self._encoder(x)
+            z = self._pre_VQ_conv(z)
+
+            loss, quantised, _ = self._VQ(z)
+            x_reconstructed = self._decoder(quantised)
+
+            return loss, x_reconstructed
+        
+
+# currently assumes the same number of residual layers in both 
+# the encoder and the decoder. 
+# Preliminary starting values for hyperparameters are here:
+VQVAE_Model = Model(num_hidden=128, num_resid_layers=3, 
+                 num_resid_hiddens=64, num_embeddings=32, 
+                 embedding_dim=32, commitment_cost=0.25)
+# utilised a starting value of commitment cost (Beta) = 0.25, according
+# to the value utilised in the van den Oord et al. paper. 
+VQVAE_Model = VQVAE_Model.to(device)
