@@ -104,12 +104,16 @@ class VectorQuantiser(nn.Module):
             - loss function term calculation
         """
         # first, we are required to flatten the encoded inputs. 
-        # from (B, C, H, W) -> (B*H*W, C)
-        B, C, H, W = inputs.shape
-        # desired ordering is B, H, W, C, so enter this as such:
+        # from (N, C, H, W) -> (N*H*W, C)
+        N, C, H, W = inputs.shape
+        # where N=batch size, C=channels, H,W are height,weight of image.
+        # Note that C (num channels) is equal to the embedding dim, due
+        # to the pre-VQ convolution layer after the encoder that makes 
+        # it such. 
+        # Desired ordering is N, H, W, C, so enter this as such:
         input_reshaped = inputs.permute(0, 2, 3, 1)
         # flatten the first three dims:
-        input_flattened = input_reshaped.reshape(B*H*W, self._embedding_dim)
+        input_flattened = input_reshaped.reshape(N*H*W, self._embedding_dim)
             
         # Calculate distances
         # note that the original van den Oord paper used argmin on 
@@ -130,9 +134,11 @@ class VectorQuantiser(nn.Module):
                                         # dimension != dim, and by the corresponding
                                         # value in index for dimension = dim. 
         
-        # Quantise and unflatten to get the INput to the decoder. 
-        # encodings multiplied by their respective weights
-        quantised = torch.matmul(encodings, self._embedding.weight).view(inputs.shape)
+        # Quantise and unflatten to get the Input to the decoder. 
+        # encodings multiplied by their respective weights. Also reshape
+        # the quantised tensor to [N,H,W,C] for consistency, and compatibility
+        # with F.mse_loss later on.
+        quantised = torch.matmul(encodings, self._embedding.weight).view(N, H, W, C)
 
         # Loss terms:
         # 1): codebook loss. This uses the l2 error to move the 
@@ -148,11 +154,13 @@ class VectorQuantiser(nn.Module):
 
         # using torch.detach() method as the 'stopgradient' operator. This
         # helps to constrain its operand to be a non-updated constant. 
-        # using mse_loss, as squared euclidian norm is equivalent to this.
+        # using mse_loss, as squared euclidian norm is equivalent to thiS.
+        
         codebook_loss = F.mse_loss(input_reshaped.detach(), quantised)
         commitment_loss = F.mse_loss(input_reshaped, quantised.detach())
         VQ_layer_losses = codebook_loss + self._commitment_cost*commitment_loss
 
+        # when returning quantised, reshape back to [N, C, H, W]
         return VQ_layer_losses, quantised.permute(0,3,1,2), encodings
 
 
@@ -328,7 +336,10 @@ class Model(nn.Module):
                                 num_resid_layers=num_resid_layers, 
                                 num_resid_hiddens=num_resid_hiddens)
         
-        # purpose of the below layer??
+        # the below layer ensures that the right number of channels feed into 
+        # the VQ module. Otherwise, the number of out channels from the 
+        # Encoder module may not match the expected number of in channels
+        # for the VQ module. 
         self._pre_VQ_conv = nn.Conv2d(in_channels=num_hidden,
                                       out_channels=embedding_dim,
                                       kernel_size=1, stride=1)
