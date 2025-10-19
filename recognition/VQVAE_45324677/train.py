@@ -3,10 +3,19 @@
 # data loader is imported from "dataset.py".
 # Losses and metrics will be plotted during training.
 
+import torch
 import torch.optim as optim
+import torch.nn.functional as F
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+
 from modules.py import VQVAE_Model
 from dataset.py import training_loader, test_loader, validation_loader
-from tqdm import tqdm
+
+# set device to allow GPU computations
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if not torch.cuda.is_available():
+    print("Warning CUDA not Found. Using CPU")
 
 # Hyperparameters
 num_epochs = 2
@@ -53,9 +62,12 @@ for epoch in range(num_epochs):
     for batch_idx, (inputs, _) in progress_bar:
 
         inputs = inputs.to(device)
-        # calculate loss, backward propagate, then have optimiser take a step
         optimiser.zero_grad()
+
+        # forward pass over the model
         loss, data_reconstructed  = VQVAE_Model(inputs)
+
+        # calculate loss, backward propagate, then have optimiser take a step
         loss = full_VQVAE_loss(loss, data_reconstructed, inputs)
         loss.backward()
         training_loss += loss.item()
@@ -65,6 +77,33 @@ for epoch in range(num_epochs):
         progress_bar.set_postfix({'Loss': loss.item()})
 
     avg_loss = training_loss / len(training_loader.dataset)
-    print(f'Epoch [{epoch + 1}/{num_epochs}], 
-          Average Loss: {avg_loss:.4f}, 
-          Training loss: {training_loss}')
+    print(f'Epoch [{epoch + 1}/{num_epochs}], Average Loss: {avg_loss:.4f}, Training loss: {training_loss}')
+
+    # Visualize HipMRI VQVAE reconstructions every few epochs
+    if (epoch + 1) % 1 == 0:
+        # set the model in evaluation mode - this effectively means that
+        # certain layers e.g. Dropout/Batchnorm layers etc. are turned off
+        VQVAE_Model.eval()
+        with torch.no_grad():  # torch.no_grad() turns off gradient computations
+            test_images, _ = next(iter(test_loader))
+            test_images = test_images.to(device)
+            loss, reconstructed_images = VQVAE_Model(test_images)
+
+            # Plot original vs reconstructed
+            fig, axes = plt.subplots(2, 10, figsize=(20, 4))
+            for i in range(10):  # plots column-by-column
+                # Original
+                axes[0, i].imshow(test_images[i].cpu().squeeze(), cmap='gray')
+                axes[0, i].axis('off')
+                if i == 0:
+                    axes[0, i].set_ylabel('Original', fontsize=12)
+
+                # Reconstructed
+                axes[1, i].imshow(reconstructed_images[i].cpu().squeeze(), cmap='gray')
+                axes[1, i].axis('off')
+                if i == 0:
+                    axes[1, i].set_ylabel('Reconstructed', fontsize=12)
+
+            plt.suptitle(f'VQVAE Reconstructions - Epoch {epoch+1}', fontsize=14)
+            plt.tight_layout()
+            plt.show()
