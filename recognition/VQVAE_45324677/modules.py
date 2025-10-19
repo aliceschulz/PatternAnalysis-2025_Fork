@@ -47,10 +47,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 
 # set device to allow GPU computations
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if not torch.cuda.is_available():
+    print("Warning CUDA not Found. Using CPU")
 
 # Vector Quantiser class
 class VectorQuantiser(nn.Module):
@@ -89,71 +90,70 @@ class VectorQuantiser(nn.Module):
         self._embedding.weight.data.uniform_(-1/self._num_embeddings,
                                              1/self._num_embeddings)
         
-        def forward(self, inputs):
-            """Defines the forward pass for the Vector Quantiser.
+    def forward(self, inputs):
+        """Defines the forward pass for the Vector Quantiser.
             
-            Each forward pass will include: 
-                - re-shaping of input to the appropriate shape (note: 
-                    the 'inputs' come from the encoder, they are not
-                    directly the images themselves)
-                - calculation of distance between point and 
-                embedding vector
-                - determining which is the closest embedding vector
-                (and therefore setting the encoding to this)
-                - loss function term calculation
-            """
-            # first, we are required to flatten the encoded inputs. 
-            # from (B, C, H, W) -> (B*H*W, C)
-            B, C, H, W = inputs.shape
-            # desired ordering is B, H, W, C, so enter this as such:
-            input_reshaped = inputs.permute(0, 2, 3, 1)
-            # flatten the first three dims:
-            input_flattened = input_reshaped.reshape(B*H*W, 
-                                                     self._embedding_dim)
+        Each forward pass will include: 
+            - re-shaping of input to the appropriate shape (note: 
+                the 'inputs' come from the encoder, they are not
+                directly the images themselves)
+            - calculation of distance between point and 
+            embedding vector
+            - determining which is the closest embedding vector
+            (and therefore setting the encoding to this)
+            - loss function term calculation
+        """
+        # first, we are required to flatten the encoded inputs. 
+        # from (B, C, H, W) -> (B*H*W, C)
+        B, C, H, W = inputs.shape
+        # desired ordering is B, H, W, C, so enter this as such:
+        input_reshaped = inputs.permute(0, 2, 3, 1)
+        # flatten the first three dims:
+        input_flattened = input_reshaped.reshape(B*H*W, self._embedding_dim)
             
-            # Calculate distances
-            # note that the original van den Oord paper used argmin on 
-            # the regular l2 norm, but here we argmin the squared l2 norm,
-            # as it is equivalent and slightly easier to compute. 
-            dist = torch.sum(input_flattened**2, dim=1, keepdim=True)
-            + torch.sum(self._embedding.weight**2, dim=1)
-            - 2*torch.matmul(input_flattened, self._embedding.weight.t())
+        # Calculate distances
+        # note that the original van den Oord paper used argmin on 
+        # the regular l2 norm, but here we argmin the squared l2 norm,
+        # as it is equivalent and slightly easier to compute. 
+        dist = torch.sum(input_flattened**2, dim=1, keepdim=True)
+        + torch.sum(self._embedding.weight**2, dim=1)
+        - 2*torch.matmul(input_flattened, self._embedding.weight.t())
             
-            # Using the nearest neighbour lookup, evaluate which codebook
-            # embedding to use for the given input
-            e_index = torch.argmin(dist, dim=1).unsqueeze(1)
-            encodings = torch.zeros(e_index.shape[0], self._num_embeddings, device=device)
-            encodings.scatter_(1, e_index, 1)  # writes all values from '1' into the 
+        # Using the nearest neighbour lookup, evaluate which codebook
+        # embedding to use for the given input
+        e_index = torch.argmin(dist, dim=1).unsqueeze(1)
+        encodings = torch.zeros(e_index.shape[0], self._num_embeddings, device=device)
+        encodings.scatter_(1, e_index, 1)  # writes all values from '1' into the 
                                         # encodings, at the indices specified 
                                         # in 'e_index'. The output index for the '1' 
                                         # is specified by its index in '1' for 
                                         # dimension != dim, and by the corresponding
                                         # value in index for dimension = dim. 
         
-            # Quantise and unflatten to get the INput to the decoder. 
-            # encodings multiplied by their respective weights
-            quantised = torch.matmul(encodings, self._embedding.weight).view(inputs.shape)
+        # Quantise and unflatten to get the INput to the decoder. 
+        # encodings multiplied by their respective weights
+        quantised = torch.matmul(encodings, self._embedding.weight).view(inputs.shape)
 
-            # Loss terms:
-            # 1): codebook loss. This uses the l2 error to move the 
-            #   embedding vectors towards the encoder inputs.
-            #   ||sg[z_e(x)] - e ||_2^2 in original van den Oord paper
-            #   AKA MS diff bn output of VQ layer, and input to VQ layer
+        # Loss terms:
+        # 1): codebook loss. This uses the l2 error to move the 
+        #   embedding vectors towards the encoder inputs.
+        #   ||sg[z_e(x)] - e ||_2^2 in original van den Oord paper
+        #   AKA MS diff bn output of VQ layer, and input to VQ layer
 
-            # 2): commitment loss. This is to ensure the volume of the 
-            #   embedding space does not grow arbitrarily - helps the 
-            #   encoder to commit to an embedding. 
-            #   || z_e(x) - sg[e] ||_2^2 in original van den Oord paper
-            #   AKA MS diff bn output of VQ layer, and input to VQ layer                  
+        # 2): commitment loss. This is to ensure the volume of the 
+        #   embedding space does not grow arbitrarily - helps the 
+        #   encoder to commit to an embedding. 
+        #   || z_e(x) - sg[e] ||_2^2 in original van den Oord paper
+        #   AKA MS diff bn output of VQ layer, and input to VQ layer                  
 
-            # using torch.detach() method as the 'stopgradient' operator. This
-            # helps to constrain its operand to be a non-updated constant. 
-            # using mse_loss, as squared euclidian norm is equivalent to this.
-            codebook_loss = F.mse_loss(input_reshaped.detach(), quantised)
-            commitment_loss = F.mse_loss(input_reshaped, quantised.detach())
-            VQ_layer_losses = codebook_loss + self._commitment_cost*commitment_loss
+        # using torch.detach() method as the 'stopgradient' operator. This
+        # helps to constrain its operand to be a non-updated constant. 
+        # using mse_loss, as squared euclidian norm is equivalent to this.
+        codebook_loss = F.mse_loss(input_reshaped.detach(), quantised)
+        commitment_loss = F.mse_loss(input_reshaped, quantised.detach())
+        VQ_layer_losses = codebook_loss + self._commitment_cost*commitment_loss
 
-            return VQ_layer_losses, quantised.permute(0,3,1,2), encodings
+        return VQ_layer_losses, quantised.permute(0,3,1,2), encodings
 
 
 # Encoder and decoder architecture, which will be based on 
@@ -250,14 +250,14 @@ class Encoder(nn.Module):
                                              num_resid_layers=num_resid_layers,
                                              num_resid_hiddens=num_resid_hiddens)
         
-        def forward(self, inputs):
-            """Forward pass for encoder.
-            """
-            x = F.relu(self._conv1(inputs))
-            x = F.relu(self._conv2(x))
+    def forward(self, inputs):
+        """Forward pass for encoder.
+        """
+        x = F.relu(self._conv1(inputs))
+        x = F.relu(self._conv2(x))
 
-            x = self._residual_stack(self._conv3(x))
-            return x
+        x = self._residual_stack(self._conv3(x))
+        return x
         
 
 class Decoder(nn.Module):
@@ -279,7 +279,7 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
 
         self._conv1 = nn.Conv2d(in_channels=in_channels,
-                                out_chanels=num_hidden,
+                                out_channels=num_hidden,
                                 kernel_size=3,
                                 stride=1,
                                 padding=1)
@@ -301,20 +301,20 @@ class Decoder(nn.Module):
                                            stride=2,
                                            padding=1)
         
-        def forward(self, inputs):
-            """Forward pass for the decoder.
+    def forward(self, inputs):
+        """Forward pass for the decoder.
 
-            Passes inputs through the first convolutional layer, then
-            the residual stack, followed by the final deconvoltuion 
-            layers and an appropriate activation layer. 
-            """
-            x = self._conv1(inputs)
-            x = self._residual_stack(x)
+        Passes inputs through the first convolutional layer, then
+        the residual stack, followed by the final deconvoltuion 
+        layers and an appropriate activation layer. 
+        """
+        x = self._conv1(inputs)
+        x = self._residual_stack(x)
 
-            x = F.relu(self._deconv1(x))
-            x = self._deconv2(x)
+        x = F.relu(self._deconv1(x))
+        x = self._deconv2(x)
 
-            return x
+        return x
         
 # Next, define the Model class that makes use of each
 # of these components to construct the final VQVAE structure.
@@ -324,8 +324,9 @@ class Model(nn.Module):
                  embedding_dim, commitment_cost):
         super(Model, self).__init__()
 
-        self._encoder = Encoder(in_channels=1, num_hidden, 
-                                num_resid_layers, num_resid_hiddens)
+        self._encoder = Encoder(in_channels=1, num_hidden=num_hidden, 
+                                num_resid_layers=num_resid_layers, 
+                                num_resid_hiddens=num_resid_hiddens)
         
         # purpose of the below layer??
         self._pre_VQ_conv = nn.Conv2d(in_channels=num_hidden,
@@ -335,27 +336,29 @@ class Model(nn.Module):
         self._VQ = VectorQuantiser(num_embeddings, embedding_dim,
                                    commitment_cost)
         
-        self._decoder = Decoder(in_channels=embedding_dim, num_hidden,
-                                num_resid_layers, num_resid_hiddens)
+        self._decoder = Decoder(in_channels=embedding_dim, 
+                                num_hidden=num_hidden,
+                                num_resid_layers=num_resid_layers,
+                                num_resid_hiddens=num_resid_hiddens)
         
-        def forward(self, x):
-            """Forward pass through the entire VQVAE model as a whole.
-            
-            First we create an encoder class, then use an additional 
-             convolution step prior to passing encoder output through
-             the vector quantiser. From the VQ layer we also obtain the 
-             codebook loss and commitment loss, the decoder input, 
-             and the encodings. Then, the decoder input is fed to the 
-             decoder, and from here the reconstructed version of the 
-             original input is obtained.
-            """
-            z = self._encoder(x)
-            z = self._pre_VQ_conv(z)
+    def forward(self, x):
+        """Forward pass through the entire VQVAE model as a whole.
+        
+        First we create an encoder class, then use an additional 
+        convolution step prior to passing encoder output through
+        the vector quantiser. From the VQ layer we also obtain the 
+        codebook loss and commitment loss, the decoder input, 
+        and the encodings. Then, the decoder input is fed to the 
+        decoder, and from here the reconstructed version of the 
+        original input is obtained.
+        """
+        z = self._encoder(x)
+        z = self._pre_VQ_conv(z)
 
-            loss, quantised, _ = self._VQ(z)
-            x_reconstructed = self._decoder(quantised)
+        loss, quantised, _ = self._VQ(z)
+        x_reconstructed = self._decoder(quantised)
 
-            return loss, x_reconstructed
+        return loss, x_reconstructed
         
 
 # currently assumes the same number of residual layers in both 
