@@ -8,9 +8,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import os
 
-from modules.py import VQVAE_Model
-from dataset.py import training_loader, test_loader, validation_loader
+from modules import VQVAE_Model
+from dataset import training_loader, test_loader, validation_loader
 
 # set device to allow GPU computations
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -59,7 +60,11 @@ for epoch in range(num_epochs):
                         total=len(training_loader), 
                         desc=f'Epoch {epoch+1}/{num_epochs}')
     
-    for batch_idx, (inputs, _) in progress_bar:
+    # len(progress_bar) = num training images / batch size
+    for batch_id, inputs in progress_bar:
+        # each size of input is torch.Size([32, 256, 128]), where:
+        #   32 = batch size
+        #   258x128 are original dimensions of HipMRI image
 
         inputs = inputs.to(device)
         optimiser.zero_grad()
@@ -106,4 +111,7 @@ for epoch in range(num_epochs):
 
             plt.suptitle(f'VQVAE Reconstructions - Epoch {epoch+1}', fontsize=14)
             plt.tight_layout()
-            plt.show()
+            output_file = os.path.join("/home/Student/s4532467/plots", 
+                                       f'VQVAE_recon_epoch{epoch}.png')
+            plt.savefig(output_file, bbox_inches='tight')
+            plt.close()
