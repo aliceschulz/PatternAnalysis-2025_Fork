@@ -69,6 +69,16 @@ for epoch in range(num_epochs):
         inputs = inputs.to(device)
         optimiser.zero_grad()
 
+        # first, re-shape the input for compatibility with nn.Conv2d:
+        # unsqueeze() returns a new tensor with a dimension of size one 
+        # inserted at the specified position. The new tensor shares the same
+        # underlying data with this tensor. 
+        # In our case, we need to reshape the data inputs from [32,256,128]
+        # to [32,1,256,128], because nn.Conv2d will expect a 4d tensor of
+        # shape [N, C, H, W] where N=batch size, C=num channels (1 for our
+        # HipMRI grayscale image data), etc.
+        inputs = inputs.unsqueeze(1)
+
         # forward pass over the model
         loss, data_reconstructed  = VQVAE_Model(inputs)
 
@@ -90,8 +100,11 @@ for epoch in range(num_epochs):
         # certain layers e.g. Dropout/Batchnorm layers etc. are turned off
         VQVAE_Model.eval()
         with torch.no_grad():  # torch.no_grad() turns off gradient computations
-            test_images, _ = next(iter(test_loader))
+            test_images = next(iter(test_loader))
             test_images = test_images.to(device)
+
+            # first, re-shape the input for compatibility with nn.Conv2d:
+            test_images = test_images.unsqueeze(1)
             loss, reconstructed_images = VQVAE_Model(test_images)
 
             # Plot original vs reconstructed
