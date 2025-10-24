@@ -9,7 +9,11 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import os
+import numpy as np
+import time
 
+from config import *
+from plotting import *
 from modules import VQVAE_Model
 from dataset import training_loader, test_loader, validation_loader
 
@@ -49,6 +53,7 @@ def full_VQVAE_loss(VQ_loss, x_reconstructed, inputs):
     return VQVAE_loss
 
 # Training loop
+start = time.time()
 for epoch in range(num_epochs): 
     VQVAE_Model.train()  # Sets the model into training mode.
     training_loss = 0.0  # initialise training loss
@@ -80,7 +85,10 @@ for epoch in range(num_epochs):
         inputs = inputs.unsqueeze(1)
 
         # forward pass over the model
-        loss, data_reconstructed  = VQVAE_Model(inputs)
+        loss, data_reconstructed, encodings  = VQVAE_Model(inputs)
+        #unique_indices = torch.unique(encoding_indices)
+        #print(f"Unique codebook entries used: {unique_indices.numel()} / {num_embeddings}")
+        #print(f'encodings: {torch.unique(encodings, return_counts=True)}')
 
         # calculate loss, backward propagate, then have optimiser take a step
         loss = full_VQVAE_loss(loss, data_reconstructed, inputs)
@@ -94,37 +102,12 @@ for epoch in range(num_epochs):
     avg_loss = training_loss / len(training_loader.dataset)
     print(f'Epoch [{epoch + 1}/{num_epochs}], Average Loss: {avg_loss:.4f}, Training loss: {training_loss}')
 
-    # Visualize HipMRI VQVAE reconstructions every few epochs
-    if (epoch + 1) % 1 == 0:
-        # set the model in evaluation mode - this effectively means that
-        # certain layers e.g. Dropout/Batchnorm layers etc. are turned off
-        VQVAE_Model.eval()
-        with torch.no_grad():  # torch.no_grad() turns off gradient computations
-            test_images = next(iter(test_loader))
-            test_images = test_images.to(device)
+    # Visualize predictions after each epoch (or every few epochs)
+    if (epoch) % visualise_every == 0:
+        show_epoch_reconstructions(model=VQVAE_Model, test_dataset=test_loader, 
+                                   epoch=epoch + 1, n=10)
 
-            # first, re-shape the input for compatibility with nn.Conv2d:
-            test_images = test_images.unsqueeze(1)
-            loss, reconstructed_images = VQVAE_Model(test_images)
-
-            # Plot original vs reconstructed
-            fig, axes = plt.subplots(2, 10, figsize=(20, 4))
-            for i in range(10):  # plots column-by-column
-                # Original
-                axes[0, i].imshow(test_images[i].cpu().squeeze(), cmap='gray')
-                axes[0, i].axis('off')
-                if i == 0:
-                    axes[0, i].set_ylabel('Original', fontsize=12)
-
-                # Reconstructed
-                axes[1, i].imshow(reconstructed_images[i].cpu().squeeze(), cmap='gray')
-                axes[1, i].axis('off')
-                if i == 0:
-                    axes[1, i].set_ylabel('Reconstructed', fontsize=12)
-
-            plt.suptitle(f'VQVAE Reconstructions - Epoch {epoch+1}', fontsize=14)
-            plt.tight_layout()
-            output_file = os.path.join("/home/Student/s4532467/plots", 
-                                       f'VQVAE_recon_epoch{epoch}.png')
-            plt.savefig(output_file, bbox_inches='tight')
-            plt.close()
+# note: the 'elapsed' time also includes comp time for plots
+end = time.time()
+elapsed = end - start
+print("Training took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
