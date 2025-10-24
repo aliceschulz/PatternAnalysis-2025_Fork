@@ -7,9 +7,6 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 from tqdm import tqdm
-import matplotlib.pyplot as plt
-import os
-import numpy as np
 import time
 
 from config import *
@@ -21,10 +18,6 @@ from dataset import training_loader, test_loader, validation_loader
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if not torch.cuda.is_available():
     print("Warning CUDA not Found. Using CPU")
-
-# Hyperparameters
-num_epochs = 2
-learning_rate = 1e-4
 
 # Optimiser
 optimiser = optim.Adam(VQVAE_Model.parameters(), lr=learning_rate)
@@ -48,12 +41,16 @@ def full_VQVAE_loss(VQ_loss, x_reconstructed, inputs):
     """
 
     reconstruction_loss = F.mse_loss(x_reconstructed, inputs) 
-
     VQVAE_loss = reconstruction_loss + VQ_loss
+    
     return VQVAE_loss
 
 # Training loop
+# Time-tracking
 start = time.time()
+# Loss tracking
+training_losses, avg_losses = [], []
+validation_losses, avg_val_losses = [], []
 for epoch in range(num_epochs): 
     VQVAE_Model.train()  # Sets the model into training mode.
     training_loss = 0.0  # initialise training loss
@@ -69,7 +66,7 @@ for epoch in range(num_epochs):
     for batch_id, inputs in progress_bar:
         # each size of input is torch.Size([32, 256, 128]), where:
         #   32 = batch size
-        #   258x128 are original dimensions of HipMRI image
+        #   256x128 are original dimensions of HipMRI image
 
         inputs = inputs.to(device)
         optimiser.zero_grad()
@@ -99,8 +96,48 @@ for epoch in range(num_epochs):
         # Update tqdm description with current loss
         progress_bar.set_postfix({'Loss': loss.item()})
 
-    avg_loss = training_loss / len(training_loader.dataset)
-    print(f'Epoch [{epoch + 1}/{num_epochs}], Average Loss: {avg_loss:.4f}, Training loss: {training_loss}')
+    # now that an epoch has passed, evaluate the losses on both the training dataset, 
+    # and the validation dataset. 
+    avg_loss = training_loss / len(training_loader.dataset) # divides it by the entire number of training images
+    avg_losses.append(avg_loss)
+    training_losses.append(training_loss)  # training loss accumulates over each batch iter
+
+    ### Validation checking ###
+    # Set the model to evaluation mode, disabling dropout and using population
+    # statistics for batch normalization.
+    VQVAE_Model.eval()
+    running_vloss = 0.0
+    with torch.no_grad():
+        for batch_id, validation_inputs in enumerate(validation_loader):
+            #vinputs, vlabels = validation_inputs # check dimesnions
+            validation_inputs = validation_inputs.to(device)
+            print(f'validation shape: {validation_inputs.shape}')
+            # should be originally of size [32, 256, 128]
+            # need to reshape the data inputs from to [32,1,256,128], 
+            # because nn.Conv2d will expect a 4d tensor of
+            # shape [N, C, H, W] where N=batch size, C=num channels (1 for our
+            # HipMRI grayscale image data), etc.
+            validation_inputs = validation_inputs.unsqueeze(1)
+
+            # forward pass over the model
+            validation_loss, data_reconstructed, _  = VQVAE_Model(validation_inputs)
+            print(f'validation data recon shape: {data_reconstructed.shape}')
+            validation_loss = full_VQVAE_loss(validation_loss, data_reconstructed, validation_inputs)
+            running_vloss += validation_loss.item()
+            #validation shape: torch.Size([32, 256, 128])
+            #validation data recon shape: torch.Size([32, 1, 256, 128])
+    
+    #note: running_vloss is cumulative over the epoch,
+    # but validation_loss is specific only for a certain batch. 
+    avg_val_loss = running_vloss / len(validation_loader.dataset)
+    avg_val_losses.append(avg_val_loss)
+    validation_losses.append(running_vloss)
+
+    print(f"""Epoch [{epoch + 1}/{num_epochs}], 
+          Average Loss: {avg_loss:.4f}, 
+          Training loss: {training_loss:.4f}, 
+          Average Validation loss: {avg_val_loss:.4f}, 
+          Validation loss: {running_vloss:.4f}""")
 
     # Visualize predictions after each epoch (or every few epochs)
     if (epoch) % visualise_every == 0:
@@ -111,3 +148,6 @@ for epoch in range(num_epochs):
 end = time.time()
 elapsed = end - start
 print("Training took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
+
+# need to define this function in plotting.py
+plot_training_loss(plot_save_path, avg_losses, avg_val_losses)
