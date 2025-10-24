@@ -1,6 +1,6 @@
 # A script to separate out the specific plotting functions.
-# Acknowledgement: This script was adapted from Dr Wei Dai
-# "UNet_segmentation_code_demo.ipynb" 
+# Acknowledgement: This script was adapted from Dr Wei Dai, as provided in
+# the "UNet_segmentation_code_demo.ipynb" file provided for COMP3710. 
 
 import matplotlib.pyplot as plt
 import torch
@@ -10,26 +10,30 @@ from config import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def show_epoch_reconstructions(model, test_dataset, epoch, n=10):
+def show_epoch_reconstructions(model, test_dataset, epoch: int, n: int):
     """Show model predictions after a specific epoch.
     
     Args:
         model: of class nn.Module. 
         test_dataset: DataLoader class, containing the test images.
-        epoch: int. Specified within training loop; provides an epoch
+        epoch (int): Specified within training loop; provides an epoch
             number that can be included in plot titles. 
-        n: int, number of desired reconstructions to plot.
+        n (int): number of desired reconstructions to plot.
         
-    Output: 
-        None, but saves figures to desired path."""
+    Returns: 
+        None, but saves figures to desired path.
+        
+    Prereqs:
+        1 <= n <= batch size
+    """
     model.eval()
     fig, axes = plt.subplots(2, n, figsize=(12, 9))
-    fig.suptitle(f'🎯 Predictions After Epoch {epoch}', fontsize=16, fontweight='bold')
+    fig.suptitle(f'Predictions After Epoch {epoch}', fontsize=16, fontweight='bold')
 
     test_images = next(iter(test_dataset))
     # first, re-shape the input for compatibility with nn.Conv2d:
     test_images = test_images.unsqueeze(1).to(device)
-    loss, reconstructed_images, encodings = model(test_images)
+    loss, reconstructed_images, _ = model(test_images)
     
     with torch.no_grad(): # turn off gradient computations
         for i in range(n):
@@ -65,13 +69,47 @@ def show_epoch_reconstructions(model, test_dataset, epoch, n=10):
    
     model.train()  # Switch back to training mode
 
-# Quick visualization of loss
-def plot_loss(losses):
-    """Create plot of loss (SSIM) against epoch number."""
+# Visualisation of loss (as measured by SSIM)
+def plot_SSIM_loss(losses):
+    """Create plot of loss (SSIM) against epoch number.
+    """
     plt.figure(figsize=(8, 4))
     plt.plot(losses, 'bo-', linewidth=2, markersize=8)
-    plt.title('SSIM'), fontsize=14, fontweight='bold')
+    plt.title('SSIM', fontsize=14, fontweight='bold')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.grid(True, alpha=0.3)
     plt.show()
+
+# Visualisation of training and validation losses after training (as measured
+# by the VQVAE loss definition)
+def plot_training_loss(plot_save_path, train_losses, val_losses=None):
+    """Create and save plot of loss (VQVAE Loss) against epoch number.
+
+    Args: 
+        train_losses (list or np.array): list of training losses
+        val_losses (list or np.array, optional): list of validation losses,
+            which will be plotted on the same figure. 
+        plot_save_path (str): directory into which to save the plot. 
+
+    Output:
+        None, but saves the figure in the specified directory.
+
+    Prereqs:
+        len(train_losses) = len(val_losses) if val_losses is not None
+    """
+    print('Creating final plot of training and validation losses:')
+    plt.figure(figsize=(8, 4))
+    plt.plot(train_losses, 'bo-', linewidth=2, markersize=8)
+    if val_losses is not None:
+        plt.plot(val_losses, 'r^-', linewidth=2, markersize=8)
+    plt.title('VQVAE Loss over Training Epochs', fontsize=14, fontweight='bold')
+    plt.xlabel('Epoch')
+    plt.ylabel('VQVAE Loss')
+    if val_losses is not None:
+        plt.legend(['Training','Validation'])
+    plt.grid(True, alpha=0.3)
+
+    output_file = os.path.join(plot_save_path, 'train_val_losses.png')
+    plt.savefig(output_file, bbox_inches='tight')
+    plt.close()
