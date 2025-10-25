@@ -44,8 +44,8 @@ def show_epoch_reconstructions(model, test_dataset, epoch: int, n: int):
             #img_show = denormalize_image(image)
 
             # Show original image
-            print('** Test images ** (for plotting)')
-            print(f"Test image {i}: min={test_images[i].min()}, max={test_images[i].max()}")
+            #print('** Test images ** (for plotting)')
+            #print(f"Test image {i}: min={test_images[i].min()}, max={test_images[i].max()}")
             axes[0, i].imshow(test_images[i].cpu().squeeze(), cmap='gray')
             axes[0, i].set_title(f'Original {i+1}', fontweight='bold')
             axes[0, i].axis('off')
@@ -53,8 +53,8 @@ def show_epoch_reconstructions(model, test_dataset, epoch: int, n: int):
             #    axes[0, i].set_ylabel('Original', fontsize=12)
 
             # Reconstructed
-            print('** Reconstructed images **')
-            print(f"Reconstructed image {i}: min={reconstructed_images[i].min()}, max={reconstructed_images[i].max()}")
+            #print('** Reconstructed images **')
+            #print(f"Reconstructed image {i}: min={reconstructed_images[i].min()}, max={reconstructed_images[i].max()}")
             axes[1, i].imshow(reconstructed_images[i].cpu().squeeze().clamp(0,1), cmap='gray')
             axes[1, i].set_title(f'Reconstruction {i+1}', fontweight='bold')
             axes[1, i].axis('off')
@@ -70,16 +70,23 @@ def show_epoch_reconstructions(model, test_dataset, epoch: int, n: int):
     model.train()  # Switch back to training mode
 
 # Visualisation of loss (as measured by SSIM)
-def plot_SSIM_loss(losses):
+def plot_val_SSIMs(plot_save_path, ssims):
     """Create plot of loss (SSIM) against epoch number.
+
+    Args: 
+        ssims (list): list of average SSIMs for each epoch, computed
+            on the validation dataset. 
     """
     plt.figure(figsize=(8, 4))
-    plt.plot(losses, 'bo-', linewidth=2, markersize=8)
-    plt.title('SSIM', fontsize=14, fontweight='bold')
+    plt.plot(ssims, 'bo-', linewidth=2, markersize=8)
+    plt.title('SSIMs calculated on validation dataset', fontsize=14, fontweight='bold')
     plt.xlabel('Epoch')
-    plt.ylabel('Loss')
+    plt.ylabel('Average SSIM')
     plt.grid(True, alpha=0.3)
-    plt.show()
+
+    output_file = os.path.join(plot_save_path, 'val_SSIMs.png')
+    plt.savefig(output_file, bbox_inches='tight')
+    plt.close()
 
 # Visualisation of training and validation losses after training (as measured
 # by the VQVAE loss definition)
