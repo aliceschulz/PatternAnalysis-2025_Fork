@@ -8,6 +8,8 @@ import torch.optim as optim
 import torch.nn.functional as F
 from tqdm import tqdm
 import time
+import numpy as np
+from skimage.metrics import structural_similarity as ssim
 
 from config import *
 from plotting import *
@@ -51,6 +53,7 @@ start = time.time()
 # Loss tracking
 training_losses, avg_losses = [], []
 validation_losses, avg_val_losses = [], []
+avg_val_ssims = [] # over epochs
 for epoch in range(num_epochs): 
     VQVAE_Model.train()  # Sets the model into training mode.
     training_loss = 0.0  # initialise training loss
@@ -90,7 +93,7 @@ for epoch in range(num_epochs):
         # calculate loss, backward propagate, then have optimiser take a step
         loss = full_VQVAE_loss(loss, data_reconstructed, inputs)
         loss.backward()
-        training_loss += loss.item()
+        training_loss += loss.item() * inputs.size(0)
         optimiser.step()
 
         # Update tqdm description with current loss
@@ -102,45 +105,49 @@ for epoch in range(num_epochs):
     avg_losses.append(avg_loss)
     training_losses.append(training_loss)  # training loss accumulates over each batch iter
 
-    ### Validation checking ###
-    # Set the model to evaluation mode, disabling dropout and using population
-    # statistics for batch normalization.
+    ### Validation loop ###
     VQVAE_Model.eval()
     running_vloss = 0.0
     with torch.no_grad():
+        val_ssims = [] # over every image for this epoch
         for batch_id, validation_inputs in enumerate(validation_loader):
-            #vinputs, vlabels = validation_inputs # check dimesnions
             validation_inputs = validation_inputs.to(device)
-            print(f'validation shape: {validation_inputs.shape}')
-            # should be originally of size [32, 256, 128]
-            # need to reshape the data inputs from to [32,1,256,128], 
-            # because nn.Conv2d will expect a 4d tensor of
-            # shape [N, C, H, W] where N=batch size, C=num channels (1 for our
-            # HipMRI grayscale image data), etc.
             validation_inputs = validation_inputs.unsqueeze(1)
+            N, C, H, W = validation_inputs.shape
 
             # forward pass over the model
             validation_loss, data_reconstructed, _  = VQVAE_Model(validation_inputs)
-            print(f'validation data recon shape: {data_reconstructed.shape}')
             validation_loss = full_VQVAE_loss(validation_loss, data_reconstructed, validation_inputs)
-            running_vloss += validation_loss.item()
+            running_vloss += validation_loss.item() * validation_inputs.size(0) 
+            # update running training loss, multiplty each batch by the batch size. 
             #validation shape: torch.Size([32, 256, 128])
             #validation data recon shape: torch.Size([32, 1, 256, 128])
+            # SSIM checking loop
+            for i in range(N):
+                inputs_i = validation_inputs[i].squeeze(0).cpu().numpy()
+                recon_i = data_reconstructed[i].squeeze(0).cpu().numpy()
+                ssim_img = ssim(inputs_i, recon_i,
+                            data_range=recon_i.max() - recon_i.min())
+                #print(f'ssim_img for img {i}, batch {batch_id}: {ssim_img}')
+                val_ssims.append(ssim_img)
+        
     
     #note: running_vloss is cumulative over the epoch,
     # but validation_loss is specific only for a certain batch. 
     avg_val_loss = running_vloss / len(validation_loader.dataset)
     avg_val_losses.append(avg_val_loss)
     validation_losses.append(running_vloss)
+    avg_val_ssims.append(np.mean(val_ssims))
 
     print(f"""Epoch [{epoch + 1}/{num_epochs}], 
           Average Loss: {avg_loss:.4f}, 
           Training loss: {training_loss:.4f}, 
           Average Validation loss: {avg_val_loss:.4f}, 
-          Validation loss: {running_vloss:.4f}""")
+          Validation loss: {running_vloss:.4f},
+          Average SSIM (calculated on Val dataset): {np.mean(val_ssims)}""")
 
     # Visualize predictions after each epoch (or every few epochs)
-    if (epoch) % visualise_every == 0:
+    if plot_metrics and (epoch) % visualise_every == 0:
         show_epoch_reconstructions(model=VQVAE_Model, test_dataset=test_loader, 
                                    epoch=epoch + 1, n=10)
 
@@ -150,4 +157,6 @@ elapsed = end - start
 print("Training took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
 
 # need to define this function in plotting.py
-plot_training_loss(plot_save_path, avg_losses, avg_val_losses)
+if plot_metrics:
+    plot_training_loss(plot_save_path, avg_losses, avg_val_losses)
+    plot_val_SSIMs(plot_save_path, avg_val_ssims)
