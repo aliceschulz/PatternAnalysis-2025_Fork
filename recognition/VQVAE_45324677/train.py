@@ -3,6 +3,9 @@
 # data loader is imported from "dataset.py".
 # Losses and metrics will be plotted during training.
 
+######################
+##### Libraries ######
+######################
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -17,17 +20,21 @@ from plotting import *
 from modules import VQVAE_Model, PixelCNN_Model
 from dataset import training_loader, test_loader, validation_loader
 
-# set device to allow GPU computations
+#########################################
+##### Device, for GPU computations ######
+#########################################
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if not torch.cuda.is_available():
     print("Warning CUDA not Found. Using CPU")
 
-# Optimiser
+############################
+##### VQVAE Optimiser ######
+############################
 vqvae_optimiser = optim.Adam(VQVAE_Model.parameters(), lr=learning_rate)
 
-# Fully-defined loss function
-# note that VQVAE_Model.forward(inputs) returns loss and the x_reconstructed,
-# but the full loss function for VQVAE needs to include reconstruction loss. 
+#######################################
+##### Define VQVAE Loss function ######
+#######################################
 def full_VQVAE_loss(VQ_loss, x_reconstructed, inputs):
     """Compute and return the full VQVAE loss.
     
@@ -48,49 +55,38 @@ def full_VQVAE_loss(VQ_loss, x_reconstructed, inputs):
     
     return VQVAE_loss
 
-# Training loop
-# Time-tracking
+################################
+##### VQVAE Training Loop ######
+################################
 start = time.time()
-# Loss tracking
+# Loss, SSIM tracking:
 training_losses, avg_losses = [], []
 validation_losses, avg_val_losses = [], []
-avg_val_ssims = [] # over epochs
+avg_val_ssims = []
 for epoch in range(num_epochs): 
     VQVAE_Model.train()  # Sets the model into training mode.
     training_loss = 0.0  # initialise training loss
 
-    # Use tqdm to create an "iterable object that acts exactly
-    # like the original iterable, but prints a dynamically updating
-    # progress bar every time a value is requested."
+    # Use tqdm to print a dynamically updating progress bar
     progress_bar = tqdm(enumerate(training_loader), 
                         total=len(training_loader), 
                         desc=f'Epoch {epoch+1}/{num_epochs}')
     
     # len(progress_bar) = num training images / batch size
     for batch_id, inputs in progress_bar:
-        # each size of input is torch.Size([32, 256, 128]), where:
-        #   32 = batch size
+        # each size of input is torch.Size([N, 256, 128]), where:
+        #   N = batch size
         #   256x128 are original dimensions of HipMRI image
 
         inputs = inputs.to(device)
         vqvae_optimiser.zero_grad()
 
-        # first, re-shape the input for compatibility with nn.Conv2d:
-        # unsqueeze() returns a new tensor with a dimension of size one 
-        # inserted at the specified position. The new tensor shares the same
-        # underlying data with this tensor. 
-        # In our case, we need to reshape the data inputs from [32,256,128]
-        # to [32,1,256,128], because nn.Conv2d will expect a 4d tensor of
-        # shape [N, C, H, W] where N=batch size, C=num channels (1 for our
-        # HipMRI grayscale image data), etc.
+        # For compatibility with nn.Conv2d, reshape from [N,H,W]->[N,C,H,W]
         inputs = inputs.unsqueeze(1)
 
         # forward pass over the model
         loss, data_reconstructed, encodings  = VQVAE_Model(inputs)
-        #unique_indices = torch.unique(encoding_indices)
-        #print(f"Unique codebook entries used: {unique_indices.numel()} / {num_embeddings}")
-        #print(f'encodings: {torch.unique(encodings, return_counts=True)}')
-
+    
         # calculate loss, backward propagate, then have optimiser take a step
         loss = full_VQVAE_loss(loss, data_reconstructed, inputs)
         loss.backward()
@@ -102,11 +98,13 @@ for epoch in range(num_epochs):
 
     # now that an epoch has passed, evaluate the losses on both the training dataset, 
     # and the validation dataset. 
-    avg_loss = training_loss / len(training_loader.dataset) # divides it by the entire number of training images
+    avg_loss = training_loss / len(training_loader.dataset)
     avg_losses.append(avg_loss)
-    training_losses.append(training_loss)  # training loss accumulates over each batch iter
+    training_losses.append(training_loss)
 
-    ### Validation loop ###
+    ##################################
+    ##### VQVAE Validation Loop ######
+    ##################################
     VQVAE_Model.eval()
     running_vloss = 0.0
     with torch.no_grad():
@@ -120,20 +118,17 @@ for epoch in range(num_epochs):
             validation_loss, data_reconstructed, _  = VQVAE_Model(validation_inputs)
             validation_loss = full_VQVAE_loss(validation_loss, data_reconstructed, validation_inputs)
             running_vloss += validation_loss.item() * validation_inputs.size(0) 
-            # update running training loss, multiplty each batch by the batch size. 
-            #validation shape: torch.Size([32, 256, 128])
-            #validation data recon shape: torch.Size([32, 1, 256, 128])
-            # SSIM checking loop
+        
+            # SSIM checking loop:
             for i in range(N):
                 inputs_i = validation_inputs[i].squeeze(0).cpu().numpy()
                 recon_i = data_reconstructed[i].squeeze(0).cpu().numpy()
                 ssim_img = ssim(inputs_i, recon_i,
                             data_range=recon_i.max() - recon_i.min())
-                #print(f'ssim_img for img {i}, batch {batch_id}: {ssim_img}')
                 val_ssims.append(ssim_img)
         
     
-    #note: running_vloss is cumulative over the epoch,
+    # note: running_vloss is cumulative over the epoch,
     # but validation_loss is specific only for a certain batch. 
     avg_val_loss = running_vloss / len(validation_loader.dataset)
     avg_val_losses.append(avg_val_loss)
@@ -147,12 +142,11 @@ for epoch in range(num_epochs):
           Validation loss: {running_vloss:.4f},
           Average SSIM (calculated on Val dataset): {np.mean(val_ssims)}""")
 
-    # Visualize predictions after each epoch (or every few epochs)
+    # Visualize reconstructions after 'visualise_every' number of epochs
     if plot_metrics and (epoch) % visualise_every == 0:
         show_epoch_reconstructions(model=VQVAE_Model, test_dataset=test_loader, 
                                    epoch=epoch + 1, n=10)
 
-# note: the 'elapsed' time also includes comp time for plots
 end = time.time()
 elapsed = end - start
 print("Training took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
@@ -162,7 +156,9 @@ if plot_metrics:
     plot_val_SSIMs(plot_save_path, avg_val_ssims)
 
 
-# Train the PixelCNN separately from the VQVAE
+###################################
+##### PixelCNN Training Loop ######
+###################################
 print("Now training the PixelCNN...")
 start = time.time()
 pixel_training_losses = []
@@ -180,21 +176,12 @@ for epoch in range(num_epochs_pixelCNN):
         with torch.no_grad():
             inputs = inputs.unsqueeze(1)
             latents = VQVAE_Model.encode(inputs).to(device)
-            #latents_embedded = VQVAE_Model._VQ(latents)[1]  # returns quantized embeddings
             latents_embedded = VQVAE_Model._VQ._embedding(latents).permute(0,3,1,2).float()
             latents_embedded = latents_embedded.to(device)
                 
-        #print(f"latents shape, max and min: {latents.shape}, {latents.max()}, {latents.min()}")
-        #latents shape, max and min: torch.Size([32, 64, 32]), 223, 40
-        # want latents to be [N,H,W], logits to be [N, num_embeddings, H,W]
-        #embedding = nn.Embedding(VQVAE_Model.get_embeddings(), VQVAE_Model.get_embeddings())
-        #
-        #embedding = embedding.to(device)
-        #one_hot = embedding(latents)
-        #one_hot = F.one_hot(latents, num_classes=VQVAE_Model.get_embeddings()).permute(0,3,1,2).float()
+        # latents shape: torch.Size([32, 64, 32])
         logits = PixelCNN_Model(latents_embedded)
-        #print(f"logits shape, max and min: {logits.shape}, {logits.max()}, {logits.min()}")
-        #logits shape, max and min: torch.Size([32, 256, 64, 32]), 74.38320922851562, -71.2073745727539
+        # logits shape: torch.Size([32, 256, 64, 32])
         loss = F.cross_entropy(logits, latents)
 
         pixelcnn_optimiser.zero_grad()
@@ -208,6 +195,9 @@ end = time.time()
 elapsed = end - start
 print("Training took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
 
+######################################################
+##### Use PixelCNN and VQVAE to generate images ######
+######################################################
 def generate_images(shape, num_embeddings):
     """Generate images, using the trained PixelCNN_Model.
     
@@ -233,34 +223,26 @@ def generate_images(shape, num_embeddings):
     for i in range(H):
         for j in range(W):
             with torch.no_grad():
-                #one_hot = F.one_hot(latents, num_classes=num_embeddings).permute(0,3,1,2).float()
-                #context = latents[:,:i+1,:j+1]
                 # predict the next code/pixel
                 logits = PixelCNN_Model(latents_embedded)
-                # 256 embeddings come out of the PixelCNN model
-                # so the 'probs' come from sampling a multinomial 
-                # distribution with 256 categories
 
                 # sampling from predicted distribution.
                 probs = F.softmax(logits[:, :, i, j], dim=-1)
                 latents[:, i, j] = torch.multinomial(probs, 1).squeeze(-1)
-                #print(f'latents shape: {latents.shape}')
                 #latents shape: torch.Size([4, 256, 128])
             
     embedding_weights = VQVAE_Model._VQ._embedding.weight # (num_embeddings x embedding_dim)
     quantised = embedding_weights[latents]
     quantised = quantised.permute(0,3,1,2).contiguous()   
     generated_img = VQVAE_Model.decode(quantised)
-    # print("latents:", latents.shape) [4,64,32]
-    # print("embedding_weights:", embedding_weights.shape) [256,32]
-    # print("quantised:", quantised.shape) [4,32,64,32]
-    # print("generated_img:", generated_img.shape) [4,1,256,128]
+    # latents.shape [4,64,32]
+    # embedding_weights.shape [256,32]
+    # quantised.shape [4,32,64,32]
+    # generated_img.shape [4,1,256,128]
 
     return generated_img
 
 generated_images = generate_images(shape=(4, 64, 32), num_embeddings=VQVAE_Model.get_embeddings())
-#print(generated_images)
-#print(f'shape img_gend: {generated_images.shape}')
 
 if plot_metrics:
     plot_PixelCNN_loss(plot_save_path, pixel_training_losses, val_losses=None)

@@ -3,6 +3,9 @@
 # Data is sourced from the HipMRI Study on Prostate Cancer, and available in
 # the COMP3710 folder on the Rangpur cluster. 
 
+####################
+#### libraries #####
+####################
 import os
 import numpy as np
 import nibabel as nib
@@ -12,18 +15,18 @@ import utils
 from torch.utils.data import DataLoader
 from config import *
 
+####################
+#### data dirs #####
+####################
 print('Defining data directories...')
 dir_test = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_test"
 dir_train = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_train"
 dir_validation = "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_validate"
 
-# Hyperparameters
-batch_size = 32
-plot_images = False
 
-# transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (1.0,))])
-
-# convert to one-hot encoded: for categorical data. 
+#############################
+#### define import funs #####
+#############################
 def to_channels(arr: np.ndarray, dtype=np.uint8) -> np.ndarray:
     """Converts a 2D array of categorical labels to a one-hot encoded 3D array.
 
@@ -44,7 +47,6 @@ def to_channels(arr: np.ndarray, dtype=np.uint8) -> np.ndarray:
 
     return res
 
-# load medical image functions
 def load_data_2D(imageNames, normImage=False, categorical=False,
                  dtype=np.float32, getAffines=False, early_stop=False):
     """Function to load 2D medical images from Nifti files. 
@@ -58,7 +60,6 @@ def load_data_2D(imageNames, normImage=False, categorical=False,
           categorical (bool): whether the images are categorical 
             labels (if so, one-hot encode them)
           dtype: data type of output array
-          getAffines:
           early_stop (bool): whether to stop loading pre-maturely, 
             leaves arrays mostly empty, for quick loading and testing scripts 
 
@@ -114,6 +115,9 @@ def load_data_2D(imageNames, normImage=False, categorical=False,
         print(f"Number of dimension-mismatched images: {num_mismatch}")
         return images
     
+####################
+#### load data #####
+####################
 img_names = os.listdir(dir_train) # provides a list of all filenames.
 img_paths = [os.path.join(dir_train, name) for name in img_names]
 image_training_data = load_data_2D(img_paths, normImage=False)
@@ -126,52 +130,37 @@ img_names = os.listdir(dir_validation)
 img_paths = [os.path.join(dir_validation, name) for name in img_names]
 image_validation_data = load_data_2D(img_paths, normImage=False)
 
-# define a function for making a few plots of the original image:
-def plt_original_imgs(image, save_path, index):
-    """Plot original HipMRI Study on Prostate Cancer images.
-
-    Args: 
-        image: np.ndarray, image to be plotted. Often will be output from 
-               load_data_2D function.
-        save_path: str, directory to the save location
-        index: int, image index. 
-
-    Returns:
-        None, but saves plot to specified location.
-    """
-    if image.ndim == 3:
-        image = image.squeeze()
-
-    plt.imshow(image, cmap='gray')
-    plt.title('Image of HipMRI Study on Prostate Cancer')
-    plt.axis('off')
-
-    os.makedirs(save_path, exist_ok=True)
-    output_file = os.path.join(save_path, f'HipMRI_img_{index}.png')
-    plt.savefig(output_file, bbox_inches='tight')
-    plt.close()
-
+################################
+##### plot data (optional) #####
+################################
 if plot_images:
     for i in range(10):
         plt_original_imgs(
             image=image_training_data[i],
-            save_path='/home/Student/s4532467/plots',
+            plot_save_path=plot_save_path,
             index=i
             )
-    
-# Normalise images to [0,1]
+        
+
+#########################
+#### normalisations #####
+#########################
+# normalise to [0,1], for each set, separately.
 global_max = np.max(image_training_data)
 image_training_data = image_training_data / global_max
+
 global_max = np.max(image_test_data)
 image_test_data = image_test_data / global_max
+
 global_max = np.max(image_validation_data)
 image_validation_data = image_validation_data / global_max
 
-# next, implement the proper data loader to be implemented with the model.
+#######################
+#### data loaders #####
+#######################
 training_loader = DataLoader(image_training_data, 
                              batch_size=batch_size,
                              shuffle=True)
-
 
 test_loader = DataLoader(image_test_data, 
                          batch_size=batch_size,
@@ -181,7 +170,9 @@ validation_loader = DataLoader(image_validation_data,
                                batch_size=32,
                                shuffle=True)
 
-# print some info around training data, and datasets
+#####################
+#### print info #####
+#####################
 single_image = image_training_data[0]
 print("** Image Information **")
 print(f"Image tensor shape: {single_image.shape}")
@@ -191,22 +182,5 @@ print("** Dataset Information **")
 print(f"Training set size: {len(image_training_data)} images")
 print(f"Test set size: {len(image_test_data)} images")
 print(f"Validation set size: {len(image_validation_data)} images")
-print(f"Pixel value range (after normalisation): [{single_image.min()},{single_image.max()}]")
-print(f"Max pixel value across the dataset: {global_max}")
-print(f"Max pixel value after normalisation: {image_training_data.max()}")
-
-# plot and print some information around variability of pixel values
-# across the whole dataset. 
-pixel_means = np.mean(image_training_data, axis=(1,2))
-len(pixel_means)
-
-plt.hist(pixel_means)
-plt.title(f'Mean pixel values across {len(pixel_means)} HipMRI training images')
-plt.xlabel('Pixel value mean')
-plt.ylabel('Frequency')
-
-output_file = os.path.join(plot_save_path, f'HipMRI_trainset_pixelmeans.png')
-plt.savefig(output_file, bbox_inches='tight')
-plt.close()
 
 

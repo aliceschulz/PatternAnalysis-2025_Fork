@@ -5,26 +5,22 @@
 # also include the FINAL output plots - i.e. not just ones during training
 # presumably if I wish to plot/view some things during training, that 
 # will necessarily have to be in the training loop?
+
+######################
+##### Libraries ######
+######################
 import torch
 import time
 from skimage.metrics import structural_similarity as ssim
 from dataset import *
-from train import *
+from train import * # runs training script
 
 
-# reqs: shape(img1) = shape(img2)
-# data_range: the data range of the input image (difference between max and min possible vals)
-#   by default, this is estimated from the image data type. this estimate may be wrong for 
-#   floating point image data. recommended to pass this scalar value explicitly. 
-# returns: mssim (float): the meas structural similarity index over the image.
-# 
-# # check final testing loss, and final SSIMs
-# # assuming model has already been fully trained
-# 
-
-# Test the model
+#######################
+##### Test VQVAE ######
+#######################
 print("Begin testing")
-start = time.time() #time generation
+start = time.time() #time tracking
 VQVAE_Model.eval()
 ssims = []
 with torch.no_grad():

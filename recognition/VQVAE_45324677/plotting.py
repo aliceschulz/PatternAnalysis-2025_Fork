@@ -2,16 +2,45 @@
 # Acknowledgement: This script was adapted from Dr Wei Dai, as provided in
 # the "UNet_segmentation_code_demo.ipynb" file provided for COMP3710. 
 
+######################
+##### Libraries ######
+######################
 import matplotlib.pyplot as plt
 import torch
 import os
-
 from config import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+#################################################
+##### Plot original HipMRI Prostate Images ######
+#################################################
+def plt_original_imgs(image, plot_save_path, index):
+    """Plot original HipMRI images, to see what data looks like.
+
+    Args: 
+        image: np.ndarray, image to be plotted. Often will be output from 
+               load_data_2D function.
+        save_path: str, directory to the save location
+        index: int, image index. 
+    """
+    if image.ndim == 3:
+        image = image.squeeze()
+
+    plt.imshow(image, cmap='gray')
+    plt.title('Image of HipMRI Study on Prostate Cancer')
+    plt.axis('off')
+
+    os.makedirs(plot_save_path, exist_ok=True)
+    output_file = os.path.join(plot_save_path, f'HipMRI_img_{index}.png')
+    plt.savefig(output_file, bbox_inches='tight')
+    plt.close()
+
+#######################################
+##### Plot VQVAE Reconstructions ######
+#######################################
 def show_epoch_reconstructions(model, test_dataset, epoch: int, n: int):
-    """Show model predictions after a specific epoch.
+    """Show model reconstructions after a specific epoch.
     
     Args:
         model: of class nn.Module. 
@@ -38,28 +67,15 @@ def show_epoch_reconstructions(model, test_dataset, epoch: int, n: int):
     with torch.no_grad(): # turn off gradient computations
         for i in range(n):
 
-            #loss, reconstructed_image, encodings = model(image.unsqueeze(1).to(device))
-
-            # Denormalize image for visualization
-            #img_show = denormalize_image(image)
-
-            # Show original image
-            #print('** Test images ** (for plotting)')
-            #print(f"Test image {i}: min={test_images[i].min()}, max={test_images[i].max()}")
+            # Original (test) images
             axes[0, i].imshow(test_images[i].cpu().squeeze(), cmap='gray')
             axes[0, i].set_title(f'Original {i+1}', fontweight='bold')
             axes[0, i].axis('off')
-            #if i == 0:
-            #    axes[0, i].set_ylabel('Original', fontsize=12)
-
-            # Reconstructed
-            #print('** Reconstructed images **')
-            #print(f"Reconstructed image {i}: min={reconstructed_images[i].min()}, max={reconstructed_images[i].max()}")
+      
+            # Reconstructed (by VQVAE) images
             axes[1, i].imshow(reconstructed_images[i].cpu().squeeze().clamp(0,1), cmap='gray')
             axes[1, i].set_title(f'Reconstruction {i+1}', fontweight='bold')
             axes[1, i].axis('off')
-            #if i == 0:
-            #    axes[1, i].set_ylabel('Reconstructed', fontsize=12)
 
     plt.suptitle(f'VQVAE Reconstructions - Epoch {epoch+1}', fontsize=14)
     plt.tight_layout()
@@ -69,7 +85,9 @@ def show_epoch_reconstructions(model, test_dataset, epoch: int, n: int):
    
     model.train()  # Switch back to training mode
 
-# Visualisation of loss (as measured by SSIM)
+########################################################################
+##### Visualise Loss on the reconstructions (as measured by SSIM) ######
+########################################################################
 def plot_val_SSIMs(plot_save_path, ssims):
     """Create plot of loss (SSIM) against epoch number.
 
@@ -88,8 +106,9 @@ def plot_val_SSIMs(plot_save_path, ssims):
     plt.savefig(output_file, bbox_inches='tight')
     plt.close()
 
-# Visualisation of training and validation losses after training (as measured
-# by the VQVAE loss definition)
+###########################################################################
+##### Visualise VQVAE Training and Validation losses during training ######
+###########################################################################
 def plot_training_loss(plot_save_path, train_losses, val_losses=None):
     """Create and save plot of loss (VQVAE Loss) against epoch number.
 
@@ -121,6 +140,9 @@ def plot_training_loss(plot_save_path, train_losses, val_losses=None):
     plt.savefig(output_file, bbox_inches='tight')
     plt.close()
 
+####################################################
+##### Plot PixelCNN Training Loss over Epochs ######
+####################################################
 def plot_PixelCNN_loss(plot_save_path, train_losses, val_losses=None):
     """Create and save plot of loss (VQVAE Loss) against epoch number.
 
@@ -152,6 +174,9 @@ def plot_PixelCNN_loss(plot_save_path, train_losses, val_losses=None):
     plt.savefig(output_file, bbox_inches='tight')
     plt.close()
 
+######################################################
+##### Plot the PixelCNN-generated HipMRI Images ######
+######################################################
 def plot_generated_images(generated_images, epoch: int):
     """Show model predictions after a specific epoch.
     
