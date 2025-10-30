@@ -1,23 +1,6 @@
 # This file contains the source code of the components of the VQVAE model. 
 # Each component will be implemented as a class or a function.
 
-# we will need:
-
-# 1) a Vector Quantiser class. 
-# 2) An encoder class.
-# 3) A decoder class. 
-# 4) A Model class that puts the components together.
-# a lot of sources recommend or utilise residual connections in the
-# encoder blocks and decoder blocks (similar to ResNet), so we will 
-# leverage off this and also utilise some residual blocks. 
-
-# Overall, the model is a combination of these components and needs to:
-# - Use the encoder to take in the input data and produces an output. 
-# - The encoder's output goes into the vector quantiser thing
-# - the vector quantiser uses nearest neighbour lookup to find the closest embedding vector e
-# - the corresponding embedding vector is then the input to the decoder
-# - the decoder produces the final output. 
-
 # Hyperparameters that will need successive tuning:
 # - num_embeddings (number of embedding vectors K in the codebook)
 #   -> increasing this increases the capacity in the info-bottleneck
@@ -388,14 +371,81 @@ class Model(nn.Module):
         """Return number of embeddings"""
 
         return self._num_embeddings
-        
+    
+    def encode(self, x):
+        """Return the encoded values for a given input/image.
 
+        This involves a pass through the encoder, followed by a 
+        pass through the VectorQuantiser.
+        """
+        x = self._encoder(x)
+        x = self._pre_VQ_conv(x)
+        loss, quantised, encodings = self._VQ(x) # [N,H,W]
+
+        return encodings
+    
+    def decode(self, x):
+        """Return the decoded value given an input discrete codes.
+        
+        Args: 
+            x: discrete embeddings
+        """
+        x = self._decoder(x)
+        return x
+        
+class MaskedConv2d(nn.Module):
+    def __init__(self, mask_type, in_channels, out_channels,
+                 kernel_size, stride=1, padding=0):
+        super().__init__()
+
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size,
+                              stride, padding)
+        weight = self.conv.weight.data.clone()
+        self.register_buffer('mask', torch.ones_like(weight))
+        N, C, H, W = self.conv.weight.size()
+
+        self.mask[:,:,H//2, W//2 + (mask_type=='B'):] = 0
+        self.mask[:,:,H//2 + 1] = 0
+
+    def forward(self,x):
+        return F.conv2d(x, self.conv.weight*self.mask, self.conv.bias, 
+                        stride=self.conv.stride, padding=self.conv.padding)
+
+class PixelCNN(nn.Module):
+    def __init__(self, num_embeddings, embedding_dim,
+                 kernel_size, n_layers, hidden_channels=64):
+        super().__init__()
+        
+        # Mask A applies only to the first convolutional layer
+        self.input_conv = MaskedConv2d('A',in_channels=embedding_dim,
+                                       out_channels=hidden_channels, 
+                                       kernel_size=7, padding=kernel_size//2)
+        self.hidden_layers = nn.ModuleList([
+            MaskedConv2d('B', in_channels=hidden_channels,
+                         out_channels=hidden_channels, kernel_size=kernel_size,
+                         padding=kernel_size//2)
+                         for _ in range(n_layers)
+        ])
+        self.output_conv = nn.Conv2d(hidden_channels, num_embeddings, 1)
+
+    def forward(self, x):
+        x = F.relu(self.input_conv(x))
+        for layer in self.hidden_layers:
+            x = F.relu(layer(x))
+        logits = self.output_conv(x)
+        return logits 
+        
 # currently assumes the same number of residual layers in both 
 # the encoder and the decoder. 
 # Preliminary starting values for hyperparameters are here:
 VQVAE_Model = Model(num_hidden=128, num_resid_layers=3, 
                  num_resid_hiddens=64, num_embeddings=256, 
                  embedding_dim=32, commitment_cost=0.5)
-# utilised a starting value of commitment cost (Beta) = 0.25, according
-# to the value utilised in the van den Oord et al. paper. 
+
 VQVAE_Model = VQVAE_Model.to(device)
+
+PixelCNN_Model = PixelCNN(num_embeddings=256, embedding_dim=32, 
+                        kernel_size=7, n_layers=5)
+
+PixelCNN_Model = PixelCNN_Model.to(device)
+# in_channels = num_embeddings
