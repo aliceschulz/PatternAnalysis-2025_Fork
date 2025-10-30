@@ -3,7 +3,7 @@
 This file includes the code etc. for implementing the topic number 10 of the COMP3710 Project.
 
 Description:
-"Create a generative model of the e HipMRI Study on Prostate Cancer using the processed 2D slices (2D images) available here with the using a VQVAE or VQVAE2 that has a “reasonably clear image” and a Structured Similarity (SSIM) of over 0.6."
+"Create a generative model of the HipMRI Study on Prostate Cancer using the processed 2D slices (2D images) available here with the using a VQVAE or VQVAE2 that has a “reasonably clear image” and a Structured Similarity (SSIM) of over 0.6."
 
 This folder will contain the solution and its code, and later will contain a summary of the results and model (essentially as a mini-report). 
 
@@ -37,21 +37,33 @@ Each component is as follows:
 
 ### Encoder
 
-An encoder network outputs discrete codes/embeddings. Similar to a traditional encoder, it functions by taking in the image inputs, and through a series of convolutional sampling, results in a different representation.
+An encoder network outputs discrete codes/embeddings. Similar to a traditional encoder, it functions by taking in the image input data, and through a series of convolutional sampling, results in a different representation. To increase accuracy, this encoder implements residual connections through the use of residual blocks. 
 
 ### Vector Quantiser
 
-Discrete latent space learnt by the VQVAE can capture important features of the data in an unsupervised manner. 
+The Vector Quantiser helps to represent the discrete latent space that is learnt by the VQVAE and that can capture important features of the data in an unsupervised manner. Outputs from the encoder are entered into the vector quantiser, which then uses a nearest neighbour lookup to identify the closest embedding vector within the space. 
+Embeddings are represented by the class nn.Embedding, which functions as a simple lookup table that maps an index value to a weight matrix. During training, the parameters of this embedding layer are adjusted, with the embedding matrix (also known as codebook) being updated via backpropagation to minimise the loss function. 
 
 ### Vector Quantiser prior
 
+The prior in the VQVAE case is learnt rather than static. In the original VQVAE implementation, an autoregressive prior was used [?].
+
 ### Decoder
+
+The decoder takes as input the embedding vector identified by the vector quantiser. Through another series of convolutions, the input is sampled until the final output is produced. Similar to the encoder, residual connections are implemented through the use of stacks of residual blocks. 
 
 ### PixelCNN
 
-It learns to model the prior.
+The PixelCNN is a model that learns to model the prior, and is used for generation. For image generation, it generates every new pixel sequentially, one at a time, and on the basis of (conditioned on) previous pixels it has generated [?]. It uses masked convolutions, in order to set connections to any future pixels to zero, such that the model cannot 'see' these.
+To sample from the latent space, the trained PixelCNN is fit over the latent values. 
 
 ### Loss
+
+The VQVAE loss is composed of three components, which each have their own interpretation and effect. <description of this>
+
+In terms of measuring reconstruction fidelity, the Structural Similarity Index (SSIM) was used. This is a framework for assessing the similarity and visibility of differences between a 'distorted' image and a reference image, based on the degradation of or change in structural information [?]. It holds a benefit over other metrics as it takes texture and structural information into account, and incorporates perceptual phenomena such as luminance and contrast [?]. In the case of this project, the SSIM is measured in reference to the original uncompressed/unedited HipMRI image. 
+
+### 
 
 ## Data & Preprocessing
 
@@ -76,13 +88,19 @@ i.e. which commands to run
 
 ### Training / Loss Curves
 
-The loss was evaluated using SSIM (structued similarity index).
+The loss was evaluated using SSIM (structued similarity index) [3], as well as the VQVAE loss. During training, it was evaluated on both the training dataset and the validation set. 
+Plots indicate that training and validation loss for the VQVAE decrease with more epochs. The validation loss starts out higher than the training loss, which is to be expected, but then they approach each other. The validation loss also does not start to overtake the training loss, which is a good indicator that the model is not overfitting. 
 
 ### Result Demonstration 
+
+In this section, the results of the reconstruction and generation will be shared.
 
 #### Reconstruction
 
 #### Generation
+
+## Other notes/assumptions
+To address data leakage, I have assumed that individuals were *not* repeated across the training, test, and validation sets. I.e., the individuals that constitute the training set are completely independent of the individuals that constitute the testing/validation set, and there are no images in the test/validation set that are of individuals that also appeared in the training set. This would constitute a large data leakage risk and may lead to overestimation of accuracy, even if the images themselves are different. 
 
 ## References
 
@@ -92,6 +110,10 @@ Patterns,
 Volume 4, Issue 9,
 2023,
 100804,
+
+
+Zhou Wang, A. C. Bovik, H. R. Sheikh and E. P. Simoncelli, "Image quality assessment: from error visibility to structural similarity," in IEEE Transactions on Image Processing, vol. 13, no. 4, pp. 600-612, April 2004, doi: 10.1109/TIP.2003.819861.
+<img width="1190" height="110" alt="image" src="https://github.com/user-attachments/assets/45b44f4f-87be-466e-a444-475b49fb7fb8" />
 
 
 
