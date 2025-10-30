@@ -15,11 +15,19 @@ This project aims to implement a VQVAE (as described in [1]) to perform image re
 
 Outlined here are the versions used within this VQVAE implementation, and their dependencies.
 
-**| Package | Version | Dependencies, if applicable | Usage | **
-|---|---|---|
+| Package | Version | Dependencies, if applicable | Usage |
+|---|---|---|---|
 | python | v3.13.7 | - | - |
-| scikit-image | v0.25.2 | numpy >= 1.24| SSIM metric |
-| Validate | 660 | 660/(11460+540+660) = 5.21% |
+| scikit-image | v0.25.2 | numpy>=1.24, scipy>=1.11.4, networkx>=3.0, pillow>=10.1, imageio!=2.35.0,>=2.33, tifffile>=2022.8.12, packaging>=21, lazy-loader>=0.4| SSIM metric |
+| tqdm | v4.67.1 | - | Load data function. Progress bars for training loops. |
+| nibabel | v5.3.2 | numpy>=1.22, packaging>=20 | Load data function. |
+| numpy | v2.1.2 | - | Load data function, linear algebra. |
+| packaging | v25.0 | - | - |
+| torch | v2.7.1+cu118 | - | Deep learning model. |
+| openssl | v3.0.18 | - | tqdm | 
+| matplotlib | v3.10.6 | - | Plotting and visualisations. |
+| utils | v1.0.2 | - | to_channels function |
+
 
 ## Description of the Model - VQVAE
 
@@ -38,6 +46,10 @@ Discrete latent space learnt by the VQVAE can capture important features of the 
 ### Vector Quantiser prior
 
 ### Decoder
+
+### PixelCNN
+
+It learns to model the prior.
 
 ### Loss
 
