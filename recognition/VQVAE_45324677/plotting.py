@@ -120,3 +120,62 @@ def plot_training_loss(plot_save_path, train_losses, val_losses=None):
     output_file = os.path.join(plot_save_path, 'train_val_losses.png')
     plt.savefig(output_file, bbox_inches='tight')
     plt.close()
+
+def plot_PixelCNN_loss(plot_save_path, train_losses, val_losses=None):
+    """Create and save plot of loss (VQVAE Loss) against epoch number.
+
+    Args: 
+        train_losses (list or np.array): list of training losses
+        val_losses (list or np.array, optional): list of validation losses,
+            which will be plotted on the same figure. 
+        plot_save_path (str): directory into which to save the plot. 
+
+    Output:
+        None, but saves the figure in the specified directory.
+
+    Prereqs:
+        len(train_losses) = len(val_losses) if val_losses is not None
+    """
+    print('Creating final plot of training losses for PixelCNN:')
+    plt.figure(figsize=(8, 4))
+    plt.plot(train_losses, 'bo-', linewidth=2, markersize=8)
+    if val_losses is not None:
+        plt.plot(val_losses, 'r^-', linewidth=2, markersize=8)
+    plt.title('PixelCNN Loss over Training Epochs', fontsize=14, fontweight='bold')
+    plt.xlabel('Epoch')
+    plt.ylabel('PixelCNN Loss')
+    if val_losses is not None:
+        plt.legend(['Training','Validation'])
+    plt.grid(True, alpha=0.3)
+
+    output_file = os.path.join(plot_save_path, 'PixelCNN_train_val_losses.png')
+    plt.savefig(output_file, bbox_inches='tight')
+    plt.close()
+
+def plot_generated_images(generated_images, epoch: int):
+    """Show model predictions after a specific epoch.
+    
+    Args:
+        generated_images: from function generate_images in train.py
+        epoch (int): number of epochs
+        
+    Returns: 
+        None, but saves figures to desired path.
+    """
+    n = generated_images.shape[0]
+    fig, axes = plt.subplots(nrows=1, ncols=n, figsize=(12, 9))
+    fig.suptitle(f'Generations After Epoch {epoch}', fontsize=16, fontweight='bold')
+    
+    for i in range(n):
+
+        image = generated_images[i]
+        image = image.squeeze(0)
+        axes[i].imshow(image.detach().cpu().numpy(), cmap='gray')
+        axes[i].set_title(f'Image number {i+1}', fontweight='bold')
+        axes[i].axis('off')
+
+    plt.suptitle(f'VQVAE Generations - Epoch {epoch+1}', fontsize=14)
+    plt.tight_layout()
+    output_file = os.path.join(plot_save_path, f'VQVAE_gen_epoch{epoch}.png')
+    plt.savefig(output_file, bbox_inches='tight')
+    plt.close()
