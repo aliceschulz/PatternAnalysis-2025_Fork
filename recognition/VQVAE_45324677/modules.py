@@ -235,8 +235,8 @@ class VectorQuantiser(nn.Module):
                                         # is specified by its index in '1' for 
                                         # dimension != dim, and by the corresponding
                                         # value in index for dimension = dim. 
-        print(f"encodings value counts: {torch.unique(encodings, return_counts=True)}")
-        print(f"encodings shape: {encodings.shape}")
+        #print(f"encodings value counts: {torch.unique(encodings, return_counts=True)}")
+        #print(f"encodings shape: {encodings.shape}")
         
         # Quantise and unflatten to get the Input to the decoder. 
         # The encodings are multiplied by their respective weights. Also reshape
