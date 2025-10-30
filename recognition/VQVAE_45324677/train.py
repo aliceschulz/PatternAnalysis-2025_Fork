@@ -4,6 +4,7 @@
 # Losses and metrics will be plotted during training.
 
 import torch
+import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from tqdm import tqdm
@@ -13,7 +14,7 @@ from skimage.metrics import structural_similarity as ssim
 
 from config import *
 from plotting import *
-from modules import VQVAE_Model
+from modules import VQVAE_Model, PixelCNN_Model
 from dataset import training_loader, test_loader, validation_loader
 
 # set device to allow GPU computations
@@ -22,7 +23,7 @@ if not torch.cuda.is_available():
     print("Warning CUDA not Found. Using CPU")
 
 # Optimiser
-optimiser = optim.Adam(VQVAE_Model.parameters(), lr=learning_rate)
+vqvae_optimiser = optim.Adam(VQVAE_Model.parameters(), lr=learning_rate)
 
 # Fully-defined loss function
 # note that VQVAE_Model.forward(inputs) returns loss and the x_reconstructed,
@@ -72,7 +73,7 @@ for epoch in range(num_epochs):
         #   256x128 are original dimensions of HipMRI image
 
         inputs = inputs.to(device)
-        optimiser.zero_grad()
+        vqvae_optimiser.zero_grad()
 
         # first, re-shape the input for compatibility with nn.Conv2d:
         # unsqueeze() returns a new tensor with a dimension of size one 
@@ -94,7 +95,7 @@ for epoch in range(num_epochs):
         loss = full_VQVAE_loss(loss, data_reconstructed, inputs)
         loss.backward()
         training_loss += loss.item() * inputs.size(0)
-        optimiser.step()
+        vqvae_optimiser.step()
 
         # Update tqdm description with current loss
         progress_bar.set_postfix({'Loss': loss.item()})
@@ -156,7 +157,111 @@ end = time.time()
 elapsed = end - start
 print("Training took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
 
-# need to define this function in plotting.py
 if plot_metrics:
     plot_training_loss(plot_save_path, avg_losses, avg_val_losses)
     plot_val_SSIMs(plot_save_path, avg_val_ssims)
+
+
+# Train the PixelCNN separately from the VQVAE
+print("Now training the PixelCNN...")
+start = time.time()
+pixel_training_losses = []
+pixelcnn_optimiser = optim.Adam(PixelCNN_Model.parameters(), lr=learning_rate)
+VQVAE_Model.to(device) # taking already trained VQVAE
+for epoch in range(num_epochs_pixelCNN):
+    total_loss = 0.0
+    PixelCNN_Model.train()
+    progress_bar = tqdm(enumerate(training_loader), 
+                        total=len(training_loader), 
+                        desc=f'Epoch {epoch+1}/{num_epochs_pixelCNN}')
+    
+    for batch_id, inputs in progress_bar:
+        inputs = inputs.to(device)
+        with torch.no_grad():
+            inputs = inputs.unsqueeze(1)
+            latents = VQVAE_Model.encode(inputs).to(device)
+            #latents_embedded = VQVAE_Model._VQ(latents)[1]  # returns quantized embeddings
+            latents_embedded = VQVAE_Model._VQ._embedding(latents).permute(0,3,1,2).float()
+            latents_embedded = latents_embedded.to(device)
+                
+        #print(f"latents shape, max and min: {latents.shape}, {latents.max()}, {latents.min()}")
+        #latents shape, max and min: torch.Size([32, 64, 32]), 223, 40
+        # want latents to be [N,H,W], logits to be [N, num_embeddings, H,W]
+        #embedding = nn.Embedding(VQVAE_Model.get_embeddings(), VQVAE_Model.get_embeddings())
+        #
+        #embedding = embedding.to(device)
+        #one_hot = embedding(latents)
+        #one_hot = F.one_hot(latents, num_classes=VQVAE_Model.get_embeddings()).permute(0,3,1,2).float()
+        logits = PixelCNN_Model(latents_embedded)
+        #print(f"logits shape, max and min: {logits.shape}, {logits.max()}, {logits.min()}")
+        #logits shape, max and min: torch.Size([32, 256, 64, 32]), 74.38320922851562, -71.2073745727539
+        loss = F.cross_entropy(logits, latents)
+
+        pixelcnn_optimiser.zero_grad()
+        loss.backward()
+        pixelcnn_optimiser.step()
+        total_loss += loss.item()
+    train_loss = total_loss / len(training_loader)
+    pixel_training_losses.append(train_loss)
+    print(f"Epoch [{epoch+1}/{num_epochs_pixelCNN}] Loss: {train_loss:.4f}")
+end = time.time()
+elapsed = end - start
+print("Training took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
+
+def generate_images(shape, num_embeddings):
+    """Generate images, using the trained PixelCNN_Model.
+    
+    Utilises the Decoder module to return a constructed image,
+    based on an input discrete code.
+
+    Args:
+        shape (tuple): tuple of (N, H, W) where N is the batch size,
+            H and W are the image dimensions.
+
+    PreReqs:
+        Assumed PixelCNN_Model (& VQVAE) is already trained
+        N, H, W are integers > 0 
+    """
+    PixelCNN_Model.eval()
+    VQVAE_Model.eval()
+    N, H, W, = shape
+    # generates a 'blank' image: 
+    latents = torch.zeros((N, H, W), dtype=torch.long, device=device)
+    
+    latents_embedded = VQVAE_Model._VQ._embedding(latents).permute(0,3,1,2).float()
+    latents_embedded = latents_embedded.to(device)
+    for i in range(H):
+        for j in range(W):
+            with torch.no_grad():
+                #one_hot = F.one_hot(latents, num_classes=num_embeddings).permute(0,3,1,2).float()
+                #context = latents[:,:i+1,:j+1]
+                # predict the next code/pixel
+                logits = PixelCNN_Model(latents_embedded)
+                # 256 embeddings come out of the PixelCNN model
+                # so the 'probs' come from sampling a multinomial 
+                # distribution with 256 categories
+
+                # sampling from predicted distribution.
+                probs = F.softmax(logits[:, :, i, j], dim=-1)
+                latents[:, i, j] = torch.multinomial(probs, 1).squeeze(-1)
+                #print(f'latents shape: {latents.shape}')
+                #latents shape: torch.Size([4, 256, 128])
+            
+    embedding_weights = VQVAE_Model._VQ._embedding.weight # (num_embeddings x embedding_dim)
+    quantised = embedding_weights[latents]
+    quantised = quantised.permute(0,3,1,2).contiguous()   
+    generated_img = VQVAE_Model.decode(quantised)
+    # print("latents:", latents.shape) [4,64,32]
+    # print("embedding_weights:", embedding_weights.shape) [256,32]
+    # print("quantised:", quantised.shape) [4,32,64,32]
+    # print("generated_img:", generated_img.shape) [4,1,256,128]
+
+    return generated_img
+
+generated_images = generate_images(shape=(4, 64, 32), num_embeddings=VQVAE_Model.get_embeddings())
+#print(generated_images)
+#print(f'shape img_gend: {generated_images.shape}')
+
+if plot_metrics:
+    plot_PixelCNN_loss(plot_save_path, pixel_training_losses, val_losses=None)
+    plot_generated_images(generated_images, num_epochs_pixelCNN)
