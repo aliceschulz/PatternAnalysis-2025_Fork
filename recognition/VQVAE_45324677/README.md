@@ -28,21 +28,30 @@ Outlined here are the versions used within this VQVAE implementation, and their 
 | matplotlib | v3.10.6 | - | Plotting and visualisations. |
 | utils | v1.0.2 | - | to_channels function |
 
+## Hyperparameters
+
+| Name | Chosen number for project | Description | Other comments |
+|---|---|---|---|
+| num_embeddings | 256 | The number of embedding vectors (K) to be used in the codebook. | A larger K leads to increased capacity in the information bottleneck. |
+| embedding_dim | 32 | The dimensionality D of each embedding vector. | D does not change the capacity in the information bottleneck. |
+| commitment_cost | 0.5 | The weighting factor (beta) for the commitment loss term. | Load data function. Progress bars for training loops. |
+| num_resid_layers | 3 | The number of residual layers in the encoder/decoder residual stacks. | A greater reconstruction quality may be obtained with a larger number. |
+| num_hidden | 128 | Number of channels in the hidden layers of the encoder/decoder. Defines dimensionality of the feature maps and controls the size of the intermediate representations. | A greater reconstruction quality may be obtained with a larger number. |
+| num_resid_hiddens | 64 | Number of channels in the hidden layers of each residual block. | - |
 
 ## Description of the Model - VQVAE
 
 Overall, a VQVAE aims to address the 'posterior collapse' problem that may occur in traditional Variational Auto-Encoders (VAEs) by allow a learnt representation of discrete embeddings, rather than modelling a continuous latent space. 
 
 Each component is as follows:
-
 ### Encoder
 
-An encoder network outputs discrete codes/embeddings. Similar to a traditional encoder, it functions by taking in the image input data, and through a series of convolutional sampling, results in a different representation. To increase accuracy, this encoder implements residual connections through the use of residual blocks. 
+An encoder network outputs discrete codes/embeddings. Similar to a traditional encoder, it functions by taking in the image input data, and through a series of convolutional sampling, results in a different representation by extracting features from the input data. To increase accuracy, this encoder implements residual connections through the use of residual blocks. The encoder makes use of residual stacks, which are a series of residual blocks (the number of which is given by num_resid_layers).
 
 ### Vector Quantiser
 
 The Vector Quantiser helps to represent the discrete latent space that is learnt by the VQVAE and that can capture important features of the data in an unsupervised manner. Outputs from the encoder are entered into the vector quantiser, which then uses a nearest neighbour lookup to identify the closest embedding vector within the space. 
-Embeddings are represented by the class nn.Embedding, which functions as a simple lookup table that maps an index value to a weight matrix. During training, the parameters of this embedding layer are adjusted, with the embedding matrix (also known as codebook) being updated via backpropagation to minimise the loss function. 
+Embeddings are represented by the class nn.Embedding, which functions as a simple lookup table that maps an index value to a weight matrix. During training, the parameters of this embedding layer are adjusted, with the embedding matrix (also known as codebook) being updated via backpropagation to minimise the loss function. Embedding weights were initialised using a uniform distribution, to avoid starting with any bias. 
 
 ### Vector Quantiser prior
 
@@ -50,7 +59,7 @@ The prior in the VQVAE case is learnt rather than static. In the original VQVAE 
 
 ### Decoder
 
-The decoder takes as input the embedding vector identified by the vector quantiser. Through another series of convolutions, the input is sampled until the final output is produced. Similar to the encoder, residual connections are implemented through the use of stacks of residual blocks. 
+The decoder takes as input the embedding vector identified by the vector quantiser. Through another series of convolutions, the input is sampled until the final output is produced. Similar to the encoder, residual connections are implemented through the use of stacks of residual blocks. A final sigmoid activation function was utilised as the final layer of the decoder. This is to maintain consistency with the data pre-processing that was utilised; as datasets were standardised to be in [0,1] (which is the range of nn.Sigmoid()).
 
 ### PixelCNN
 
@@ -59,9 +68,13 @@ To sample from the latent space, the trained PixelCNN is fit over the latent val
 
 ### Loss
 
-The VQVAE loss is composed of three components, which each have their own interpretation and effect. <description of this>
+The VQVAE loss is composed of three components, which each have their own interpretation and effect. The first term is the codebook loss, which uses the l2 error to move the embedding vectors towards the encoder inputs. The second term is commitment loss. By pushing the encoder to commit to an embedding, it is used to ensure that the volume of the embedding space does not grow arbitrarily. 
 
 In terms of measuring reconstruction fidelity, the Structural Similarity Index (SSIM) was used. This is a framework for assessing the similarity and visibility of differences between a 'distorted' image and a reference image, based on the degradation of or change in structural information [?]. It holds a benefit over other metrics as it takes texture and structural information into account, and incorporates perceptual phenomena such as luminance and contrast [?]. In the case of this project, the SSIM is measured in reference to the original uncompressed/unedited HipMRI image. 
+
+### Optimiser, and optimisation process
+
+Optimisation process utilises the Straight Through Estimator trick. As the latent space is discretised, this step is required to allow differentiability and so that the gradient backpropagations may pass through the non-differentiable vector-quantised component. 
 
 ### 
 
@@ -96,6 +109,10 @@ Plots indicate that training and validation loss for the VQVAE decrease with mor
 In this section, the results of the reconstruction and generation will be shared.
 
 #### Reconstruction
+
+The VQVAE model succeeded in generating high-quality, reasonably clear reconstructions. Between the original image and the reconstructed one, there is clearly still some degree of blurring, but overall the image was clearly comparable to the original. All components of the image appeared in their expected locations, with consistency in brightness, texture, and scale between the two. Early reconstructions (around Epoch 1) were understandably poor, but the quality continuously improved. 
+
+
 
 #### Generation
 
