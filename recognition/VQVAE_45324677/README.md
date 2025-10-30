@@ -112,6 +112,7 @@ In this section, the results of the reconstruction and generation will be shared
 
 The VQVAE model succeeded in generating high-quality, reasonably clear reconstructions. Between the original image and the reconstructed one, there is clearly still some degree of blurring, but overall the image was clearly comparable to the original. All components of the image appeared in their expected locations, with consistency in brightness, texture, and scale between the two. Early reconstructions (around Epoch 1) were understandably poor, but the quality continuously improved. 
 
+[Epoch1](plots/VQVAE_recon_epoch1.png)
 
 
 #### Generation
