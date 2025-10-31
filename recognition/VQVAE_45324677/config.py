@@ -32,7 +32,7 @@ n_layers = 5 # for PixelCNN
 ##### train.py #####
 ####################
 
-num_epochs = 20
+num_epochs = 40
 learning_rate = 1e-4 # for both VQVAE and PixelCNN
 visualise_every = 5 # for VQVAE reconstructions
 plot_metrics = True

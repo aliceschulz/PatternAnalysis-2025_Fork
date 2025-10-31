@@ -80,6 +80,14 @@ class Encoder(nn.Module):
     """
     def __init__(self, in_channels, num_hidden, num_resid_layers, 
                  num_resid_hiddens):
+        """
+        Args:
+            in_channels (int): number of input channels
+            num_hidden (int): number of channels in hidden layers.
+            num_resid_layers (int): number of layers in residual stack
+            num_resid_hiddens (int): number of channels in hidden layers 
+                of each residual block.
+        """
         super(Encoder, self).__init__()
 
         self._conv1 = nn.Conv2d(in_channels=in_channels,
@@ -212,9 +220,10 @@ class Decoder(nn.Module):
         """
         Args:
             in_channels (int): number of input channels
-            num_hidden (int): number of hideen??
-            num_resid_layers (int):
-            num_resid_hiddens (int):
+            num_hidden (int): number of channels in hidden layers.
+            num_resid_layers (int): number of layers in residual stack
+            num_resid_hiddens (int): number of channels in hidden layers 
+                of each residual block.
         """
         super(Decoder, self).__init__()
 
@@ -344,6 +353,7 @@ class Model(nn.Module):
 ##### Define Masked Convolutions (for PixelCNN) ######
 ######################################################
 class MaskedConv2d(nn.Module):
+    """Masked 2d Convolution class for PixelCNN."""
     def __init__(self, mask_type, in_channels, out_channels,
                  kernel_size, stride=1, padding=0):
         super().__init__()
@@ -365,6 +375,7 @@ class MaskedConv2d(nn.Module):
 ##### Define PixelCNN ######
 ############################
 class PixelCNN(nn.Module):
+    """Define PixelCNN class"""
     def __init__(self, num_embeddings, embedding_dim,
                  kernel_size, n_layers, hidden_channels=64):
         super().__init__()
@@ -382,6 +393,14 @@ class PixelCNN(nn.Module):
         self.output_conv = nn.Conv2d(hidden_channels, num_embeddings, 1)
 
     def forward(self, x):
+        """Forward pass, for parameter updates.
+        
+        Args:
+            x: latent embeddings obtained from VectorQuantiser module
+            
+        Returns:
+            logits: pixel 'probabilities'
+        """
         x = F.relu(self.input_conv(x))
         for layer in self.hidden_layers:
             x = F.relu(layer(x))

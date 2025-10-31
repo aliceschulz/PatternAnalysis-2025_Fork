@@ -226,7 +226,7 @@ def generate_images(shape, num_embeddings):
                 # predict the next code/pixel
                 logits = PixelCNN_Model(latents_embedded)
 
-                # sampling from predicted distribution.
+                # sampling from predicted distribution, by using softmax.
                 probs = F.softmax(logits[:, :, i, j], dim=-1)
                 latents[:, i, j] = torch.multinomial(probs, 1).squeeze(-1)
                 #latents shape: torch.Size([4, 256, 128])

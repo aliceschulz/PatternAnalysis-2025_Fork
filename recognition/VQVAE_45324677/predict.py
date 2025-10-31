@@ -1,10 +1,6 @@
 # This script is to show example usage of the trained model.
 # Results/visualisations will be printed where applicable.
 
-# presumably this is where the final SSIM accuracy and final loss will be evaluated?
-# also include the FINAL output plots - i.e. not just ones during training
-# presumably if I wish to plot/view some things during training, that 
-# will necessarily have to be in the training loop?
 
 ######################
 ##### Libraries ######
@@ -36,13 +32,13 @@ with torch.no_grad():
         running_test_loss += test_loss.item() * inputs.size(0)
         # update running test loss, multiply each avg batch loss by batch size.
 
-        for i in range(N): # check how the indexing should be done
+        for i in range(N):
+            # [1,H,W] -> [H,W]
             inputs_i = inputs[i].squeeze(0).cpu().numpy()
-            # torch.Size([1,256,128]) -> torch.Size([256,128]) -> [256,128]
             recon_i = test_data_recon[i].squeeze(0).cpu().numpy()
             ssim_img = ssim(inputs_i, recon_i,
                             data_range=recon_i.max() - recon_i.min())
-            #print(f'ssim_img for img {i}, batch {batch_id}: {ssim_img}')
+            
             ssims.append(ssim_img)
 
     print(f"""Final test Loss: {running_test_loss}, 
@@ -52,3 +48,33 @@ with torch.no_grad():
 end = time.time()
 elapsed = end - start
 print("Testing took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
+
+##########################
+##### Test PixelCNN ######
+##########################
+print("Now testing the PixelCNN...")
+start = time.time()
+PixelCNN_Model.eval()
+VQVAE_Model.eval() # using already trained VQVAE
+pixel_test_losses = []
+with torch.no_grad():
+    running_test_loss = 0.0
+    for batch_id, inputs in enumerate(test_loader):
+        inputs = inputs.to(device)
+        inputs = inputs.unsqueeze(1)
+        
+        latents = VQVAE_Model.encode(inputs).to(device)
+        latents_embedded = VQVAE_Model._VQ._embedding(latents).permute(0,3,1,2).float()
+        latents_embedded = latents_embedded.to(device)
+                
+        logits = PixelCNN_Model(latents_embedded)
+        loss = F.cross_entropy(logits, latents)
+
+        running_test_loss += loss.item() * inputs.size(0)
+        # update running test loss, multiply each avg batch loss by batch size.
+
+    print(f"""Final test Loss: {running_test_loss}, 
+          Average Test Loss: {running_test_loss / len(test_loader.dataset)}""")
+end = time.time()
+elapsed = end - start
+print("Testing took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total for the PixelCNN")
