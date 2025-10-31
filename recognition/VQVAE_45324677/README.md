@@ -45,9 +45,9 @@ Outlined here are the versions used within this VQVAE implementation, and their 
 | num_epochs | 20 | Number of epochs to run the VQVAE training for. | - |
 | num_epochs_pixelCNN | 50 | Number of epochs to run the PixelCNN training for. | - |
 
-## Description of the Model - VQVAE
+## Description of the Model - VQVAE and PixelCNN
 
-Overall, a VQVAE aims to address the 'posterior collapse' problem that may occur in traditional Variational Auto-Encoders (VAEs) by allow a learnt representation of discrete embeddings, rather than modelling a continuous latent space [1]. 
+Overall, a VQVAE aims to address the 'posterior collapse' problem that may occur in traditional Variational Auto-Encoders (VAEs) by allow a learnt representation of discrete embeddings, rather than modelling a continuous latent space [1]. There are two components to the project overall: the VQVAE, and the PixelCNN which functions as an autoregressive prior to enable image generation [1]. 
 
 Each component is as follows:
 
@@ -57,16 +57,16 @@ An encoder network outputs discrete codes/embeddings. Similar to a traditional e
 
 ### Vector Quantiser
 
-The Vector Quantiser helps to represent the discrete latent space that is learnt by the VQVAE and that can capture important features of the data in an unsupervised manner. Outputs from the encoder are entered into the vector quantiser, which then uses a nearest neighbour lookup to identify the closest embedding vector within the space. 
+The Vector Quantiser helps to represent the discrete latent space that is learnt by the VQVAE and that can capture important features of the data in an unsupervised manner. Outputs from the encoder are entered into the vector quantiser, which then uses a nearest neighbour lookup to identify the closest embedding vector within the space. The latent embedding space is of dimension $\mathbb{R}^{K \times D}$ where $K$ is the size of the latent space (i.e., the number of embeddings), and $D$ is the dimensionality of each embedding vector (i.e., the embedding dimensions). 
 Embeddings are represented by the class nn.Embedding, which functions as a simple lookup table that maps an index value to a weight matrix. During training, the parameters of this embedding layer are adjusted, with the embedding matrix (also known as codebook) being updated via backpropagation to minimise the loss function. Embedding weights were initialised using a uniform distribution, to avoid starting with any bias. 
 
 ### Vector Quantiser prior
 
-The prior in the VQVAE case is learnt rather than static. In the original VQVAE implementation, an autoregressive prior was used [1].
+The prior in the VQVAE case is learnt rather than static, and it is trained over the discrete latent space. In the original VQVAE implementation, an autoregressive prior was used [1]. The purpose of training a 'prior' distribution is to enable generation, once the discrete latent structure has been learnt by the VQVAE [1].
 
 ### Decoder
 
-The decoder takes as input the embedding vector identified by the vector quantiser. Through another series of convolutions, the input is sampled until the final output is produced. Similar to the encoder, residual connections are implemented through the use of stacks of residual blocks. A final sigmoid activation function was utilised as the final layer of the decoder. This is to maintain consistency with the data pre-processing that was utilised; as datasets were standardised to be in [0,1] (which is the range of nn.Sigmoid()).
+As input, the decoder takes the embedding vector identified by the vector quantiser. Through another series of convolutions, the input is sampled until the final output is produced. Similar to the encoder, residual connections are implemented through the use of stacks of residual blocks. A final sigmoid activation function was utilised as the final layer of the decoder. This is to maintain consistency with the data pre-processing that was utilised; as datasets were standardised to be in [0,1] (which is the range of nn.Sigmoid()).
 
 ### PixelCNN
 
@@ -75,20 +75,24 @@ To sample from the latent space, the trained PixelCNN is fit over the latent val
 
 ### Loss
 
-The VQVAE loss is composed of three components, which each have their own interpretation and effect. The first term is the codebook loss, which uses the l2 error to move the embedding vectors towards the encoder inputs. The second term is commitment loss. By pushing the encoder to commit to an embedding, it is used to ensure that the volume of the embedding space does not grow arbitrarily. 
+The VQVAE loss is composed of three components, which each have their own interpretation and effect [1]. The first term is the reconstruction loss, which optimises the decoder and the encoder and measures the fidelity of codebook reconstructions. The second term is the codebook loss, which uses the l2 error to move the embedding vectors towards the encoder outputs. The final term is commitment loss. By pushing the encoder to commit to an embedding, it is used to ensure that the volume of the embedding space does not grow arbitrarily. 
+
+$$ L_{VQVAE} = \log p(x | z_q(x)) + \lvert \text{sg}[z_e(x)] - e\rvert_2^2 + \beta \lvert z_e(x) - \text{sg}[e] \rvert_2^2$$
+
+*Equation: Full loss term for the VQVAE. sg indicates the stop-gradient operator, which functions to constrain its operand to be a non-updated constant. Absolute value bars indicate Euclidian norm.*
 
 In terms of measuring reconstruction fidelity, the Structural Similarity Index (SSIM) was used. This is a framework for assessing the similarity and visibility of differences between a 'distorted' image and a reference image, based on the degradation of or change in structural information [3]. It holds a benefit over other metrics as it takes texture and structural information into account, and incorporates perceptual phenomena such as luminance and contrast [3]. In the case of this project, the SSIM is measured in reference to the original uncompressed/unedited HipMRI image. 
 
 ### Optimiser, and optimisation process
 
-Optimisation process utilises the Straight Through Estimator trick. As the latent space is discretised, this step is required to allow differentiability and so that the gradient backpropagations may pass through the non-differentiable vector-quantised component. 
+The optimisation process utilises the Straight Through Estimator trick [4]. As the latent space is discretised, gradients are not well-defined and so the backpropagation of gradients may fail. This step is required to allow backpropagation, by allowing the gradients to pass directly from the decoder input to the encoder output, skipping the non-differentiable vector-quantised component. 
 
-### 
+The optimiser of choice was the Adaptive Moment Estimator (Adam) [5] for both the VQVAE and PixelCNN, due to its computational efficiency and favourable performance. It combines an adaptive learning rate with momentum. 
 
 ## Data & Preprocessing
 
-Data are of HipMRI images of the male pelvis, available in Nifti file format [4]. They were acquired through a MRI-alone radiation therapy study conducted at the Calvary Mater Newcastle Hospital over 2014 [5]. 
-In this project, normalisation was performed by standardising each image such that each pixel value falls in [0,1]. It was decided to not standardise each image to a mean of 0 and standard deviation of 1, because upon inspection, the pixel values for each image clearly did not appear normally distributed (on the contrary, they appeared quite non-normal and skewed to the right). This standardisation was carried out on a global basis (using the global max value for standardisation) rather than on a per-image basis. This is because upon inspection, there was a large degree of variation between pixel max values for each image. Additionally, the standardisation was conducted separately across each split of data (train/test/validate), so as to ensure that scaling parameters such as min/max are not mixed between training and test sets (and therefore, to minimise data leakage [6]). 
+Data are of HipMRI images of the male pelvis, available in Nifti file format [6]. They were acquired through a MRI-alone radiation therapy study conducted at the Calvary Mater Newcastle Hospital over 2014 [7]. 
+In this project, normalisation was performed by standardising each image such that each pixel value falls in [0,1]. It was decided to not standardise each image to a mean of 0 and standard deviation of 1, because upon inspection, the pixel values for each image clearly did not appear normally distributed (on the contrary, they appeared quite non-normal and skewed to the right). This standardisation was carried out on a global basis (using the global max value for standardisation) rather than on a per-image basis. This is because upon inspection, there was a large degree of variation between pixel max values for each image. Additionally, the standardisation was conducted separately across each split of data (train/test/validate), so as to ensure that scaling parameters such as min/max are not mixed between training and test sets (and therefore, to minimise data leakage [8]). 
 
 The train/test/validate split was as follows: 
 *Table 3*:
@@ -105,15 +109,14 @@ This project utilised unsupervised learning and did not solve a classification p
 ## Usage
 
 Prerequisites for usage: 
-* a GPU-enabled hardware or environment
-* a suitable Python environment to meet the package dependencies/versioning listed above, in *Table 1*. 
-- predict.py
-- train.py
-i.e. which commands to run
-- Adjust parameters in `config.py` if necessary. Set `plot_metrics` parameter to True if you wish to visualise reconstructions and plot losses, SSIMs etc. 
-- Run `python train.py` to train model. All hyperparameters from `config` are imported into `train.py`.
+* a GPU-enabled hardware or environment, e.g. a HPC cluster
+* a suitable Python environment to meet the package dependencies and versioning listed above, in *Table 1*. 
 
-The project was run on the Rangpur cluster, using an Nvidia A100 GPU for computations. Data is located in the following directories: 
+How to run:
+- Adjust parameters in `config.py` if necessary. Set `plot_metrics` parameter to True if you wish to visualise reconstructions and plot losses, SSIMs etc. during/after training. All hyperparameters from `config` are imported into the relevant scripts. 
+- Run `python predict.py` to run the model. This script also runs `train.py`, and so completes training prior to evaluating model performance on the test set.
+
+The particular implementation of this project that is shared in this README was run on the Rangpur cluster, using an Nvidia A100 GPU for computations. Data is located in the following directories: 
 
 Table 4:
 | Dataset | Directory |
@@ -123,7 +126,9 @@ Table 4:
 | Validate | "/home/groups/comp3710/HipMRI_Study_open/keras_slices_data/keras_slices_validate" |
 
 The script works with the absolute paths for the data directories, and so does not rely on the data folders being set up in a specific location relative to the working directory. 
-Any plots, visualisations, or reconstructions are not shown in-editor, but are saved to a specified directory. For this project, "/home/Student/s4532467/plots" was used. 
+Any plots, visualisations, or reconstructions are not shown in-editor, but are saved to a specified directory. For this project, "/home/Student/s4532467/plots" was used.
+
+If you wish to run the script with a different dataset, you will need to modify the data directories in `dataset.py`, modify the number of channels in `config`, and potentially, evaluate what different pre-processing, standardisation, and train/test splitting is required for your specific problem and data. 
 
 
 ## Results
@@ -135,11 +140,11 @@ Plots indicate that training and validation loss for the VQVAE decrease with mor
 
 ![VQVAETrainValLoss](plots/train_val_losses.png)
 
-The SSIM, when evaluated comparing the original image with the reconstruction, achieved an SSIM > 0.6 as early as Epoch 5, then continued increasing but appears to plateau at an SSIM sitting roughly above 0.8. The final SSIM, on Epoch 20, was 0.823. 
+The SSIM, when evaluated comparing the original image with the reconstruction, achieved an SSIM > 0.6 as early as Epoch 5, then continued increasing but appears to plateau at an SSIM sitting roughly above 0.8. On Epoch 40, the final SSIM was 0.8644 (calculated on the validation dataset), and the test SSIM was 0.88. 
 
 ![ValidationSSIMs](plots/val_SSIMs.png)
 
-PixelCNN loss was evaluated on the training dataset. Loss appeared to converge at a slower rate for the PixelCNN than for the VQVAE model, however, there was still a continuous decrease and what appeared to be a plateau in the rate of decrease at around epoch 30-50. The final PixelCNN training loss was 0.3300 on Epoch 50. 
+PixelCNN loss was evaluated on the training dataset. Loss appeared to converge at a slower rate for the PixelCNN than for the VQVAE model, however, there was still a continuous decrease and what appeared to be a plateau in the rate of decrease at around epoch 30-50. The final PixelCNN training loss was 0.3722 on Epoch 50, and the final testing loss was evaluated to be 0.744. 
 
 ![PixelCNNTrainLoss](plots/PixelCNN_train_val_losses.png)
 
@@ -177,11 +182,15 @@ To address data leakage, I have assumed that individuals were *not* repeated acr
 
 [3]: Z. Wang, A. C. Bovik, H. R. Sheikh and E. P. Simoncelli, (2004), "Image quality assessment: from error visibility to structural similarity". IEEE Transactions on Image Processing, 13(4), pp. 600-612.
 
-[4]: J. Dowling, and P., Greer, (2021), "Labelled weekly MR images of the male pelvis". v2. CSIRO. Data Collection. https://doi.org/10.25919/45t8-p065
+[4]: Y. Bengio, N. Léonard, and A. Courville, (2013), "Estimating or propagating gradients through stochastic neurons for conditional computation". arXiv:1308.3432
 
-[5]: J. Dowling, J. Sun, P. Pichler, D. Rivest-Hénault, S. Ghose, H. Richardson, C. Wratten, J. Martin, J. Arm, L. B, S. Chandra, J. Fripp, F. Menk, P. Greer, (2015), "Automatic Substitute Computed Tomography Generation and Contouring for Magnetic Resonance Imaging (MRI)-Alone External Beam Radiation Therapy From Standard MRI Sequences". International Journal of Radiation Oncology, Biology, Physics, 93(5), pp. 1144-1153.
+[5]: D. P. Kingma, J. Ba, (2014), "Adam: A Method for Stochastic Optimization". arXiv:1412.6980
 
-[6]: S. Kapoor, A. Narayanan, (2023), "Leakage and the reproducibility crisis in machine-learning-based science". Patterns, 4(9), 100804.
+[6]: J. Dowling, and P., Greer, (2021), "Labelled weekly MR images of the male pelvis". v2. CSIRO. Data Collection. https://doi.org/10.25919/45t8-p065
+
+[7]: J. Dowling, J. Sun, P. Pichler, D. Rivest-Hénault, S. Ghose, H. Richardson, C. Wratten, J. Martin, J. Arm, L. B, S. Chandra, J. Fripp, F. Menk, P. Greer, (2015), "Automatic Substitute Computed Tomography Generation and Contouring for Magnetic Resonance Imaging (MRI)-Alone External Beam Radiation Therapy From Standard MRI Sequences". International Journal of Radiation Oncology, Biology, Physics, 93(5), pp. 1144-1153.
+
+[8]: S. Kapoor, A. Narayanan, (2023), "Leakage and the reproducibility crisis in machine-learning-based science". Patterns, 4(9), 100804.
 
 
 
