@@ -1,11 +1,11 @@
 # VQVAE for HipMRI Image Reconstruction
 
-This file includes the code etc. for implementing the topic number 10 of the COMP3710 Project.
+The objective of this project was to solve a recognition problem using a deep learning method. This folder includes the solution and scripts for implementing the topic number 10 of the COMP3710 Project.
 
 Description:
 "Create a generative model of the HipMRI Study on Prostate Cancer using the processed 2D slices (2D images) available here with the using a VQVAE or VQVAE2 that has a “reasonably clear image” and a Structured Similarity (SSIM) of over 0.6."
 
-This folder will contain the solution and its code, and later will contain a summary of the results and model (essentially as a mini-report). 
+This README contains a summary of the results and model, essentially as a mini-report.
 
 ## Project Overview
 
@@ -15,7 +15,7 @@ This project aims to implement a VQVAE (as described in [1]) to perform image re
 
 Outlined here are the versions used within this VQVAE implementation, and their dependencies.
 
-Table 1:
+*Table 1*:
 | Package | Version | Dependencies, if applicable | Usage |
 |---|---|---|---|
 | python | v3.13.7 | - | - |
@@ -31,7 +31,7 @@ Table 1:
 
 ## Hyperparameters
 
-Table 2:
+*Table 2*:
 | Name | Chosen number for project | Description | Other comments |
 |---|---|---|---|
 | num_embeddings | 256 | The number of embedding vectors (K) to be used in the codebook. | A larger K leads to increased capacity in the information bottleneck. |
@@ -47,7 +47,7 @@ Table 2:
 
 ## Description of the Model - VQVAE
 
-Overall, a VQVAE aims to address the 'posterior collapse' problem that may occur in traditional Variational Auto-Encoders (VAEs) by allow a learnt representation of discrete embeddings, rather than modelling a continuous latent space. 
+Overall, a VQVAE aims to address the 'posterior collapse' problem that may occur in traditional Variational Auto-Encoders (VAEs) by allow a learnt representation of discrete embeddings, rather than modelling a continuous latent space [1]. 
 
 Each component is as follows:
 
@@ -62,7 +62,7 @@ Embeddings are represented by the class nn.Embedding, which functions as a simpl
 
 ### Vector Quantiser prior
 
-The prior in the VQVAE case is learnt rather than static. In the original VQVAE implementation, an autoregressive prior was used [?].
+The prior in the VQVAE case is learnt rather than static. In the original VQVAE implementation, an autoregressive prior was used [1].
 
 ### Decoder
 
@@ -70,14 +70,14 @@ The decoder takes as input the embedding vector identified by the vector quantis
 
 ### PixelCNN
 
-The PixelCNN is a model that learns to model the prior, and is used for generation. For image generation, it generates every new pixel sequentially, one at a time, and on the basis of (conditioned on) previous pixels it has generated [?]. It uses masked convolutions, in order to set connections to any future pixels to zero, such that the model cannot 'see' these.
+The PixelCNN is a model that learns to model the prior, and is used for generation. For image generation, it generates every new pixel sequentially, one at a time, and on the basis of (conditioned on) previous pixels it has generated [2]. It uses masked convolutions, in order to set connections to any future pixels to zero, such that the model cannot 'see' these.
 To sample from the latent space, the trained PixelCNN is fit over the latent values. 
 
 ### Loss
 
 The VQVAE loss is composed of three components, which each have their own interpretation and effect. The first term is the codebook loss, which uses the l2 error to move the embedding vectors towards the encoder inputs. The second term is commitment loss. By pushing the encoder to commit to an embedding, it is used to ensure that the volume of the embedding space does not grow arbitrarily. 
 
-In terms of measuring reconstruction fidelity, the Structural Similarity Index (SSIM) was used. This is a framework for assessing the similarity and visibility of differences between a 'distorted' image and a reference image, based on the degradation of or change in structural information [?]. It holds a benefit over other metrics as it takes texture and structural information into account, and incorporates perceptual phenomena such as luminance and contrast [?]. In the case of this project, the SSIM is measured in reference to the original uncompressed/unedited HipMRI image. 
+In terms of measuring reconstruction fidelity, the Structural Similarity Index (SSIM) was used. This is a framework for assessing the similarity and visibility of differences between a 'distorted' image and a reference image, based on the degradation of or change in structural information [3]. It holds a benefit over other metrics as it takes texture and structural information into account, and incorporates perceptual phenomena such as luminance and contrast [3]. In the case of this project, the SSIM is measured in reference to the original uncompressed/unedited HipMRI image. 
 
 ### Optimiser, and optimisation process
 
@@ -87,31 +87,31 @@ Optimisation process utilises the Straight Through Estimator trick. As the laten
 
 ## Data & Preprocessing
 
-Data are of HipMRI images of the male pelvis, available in Nifti file format [dataitselfref]. They were acquired through a MRI-alone radiation therapy study conducted at the Calvary Mater Newcastle Hospital over 2014 [ref]. 
-In this project, normalisation was performed by standardising each image such that each pixel value falls in [0,1]. It was decided to not standardise each image to a mean of 0 and standard deviation of 1, because upon inspection, the pixel values for each image clearly did not appear normally distributed (on the contrary, they appeared quite non-normal and skewed to the right). This standardisation was carried out on a global basis (using the global max value for standardisation) rather than on a per-image basis. This is because upon inspection, there was a large degree of variation between pixel max values for each image. Additionally, the standardisation was conducted separately across each split of data (train/test/validate), so as to ensure that scaling parameters such as min/max are not mixed between training and test sets (and therefore, to minimise data leakage [2]). 
+Data are of HipMRI images of the male pelvis, available in Nifti file format [4]. They were acquired through a MRI-alone radiation therapy study conducted at the Calvary Mater Newcastle Hospital over 2014 [5]. 
+In this project, normalisation was performed by standardising each image such that each pixel value falls in [0,1]. It was decided to not standardise each image to a mean of 0 and standard deviation of 1, because upon inspection, the pixel values for each image clearly did not appear normally distributed (on the contrary, they appeared quite non-normal and skewed to the right). This standardisation was carried out on a global basis (using the global max value for standardisation) rather than on a per-image basis. This is because upon inspection, there was a large degree of variation between pixel max values for each image. Additionally, the standardisation was conducted separately across each split of data (train/test/validate), so as to ensure that scaling parameters such as min/max are not mixed between training and test sets (and therefore, to minimise data leakage [6]). 
 
 The train/test/validate split was as follows: 
-Table 3:
+*Table 3*:
 | Section | Number of Images | Proportion of Total Images |
 |---|---|---|
 | Train | 11,460 | 11460/(11460+540+660) = 90.52% |
 | Test | 540 | 540/(11460+540+660) = 4.27% |
 | Validate | 660 | 660/(11460+540+660) = 5.21% |
 
-Each image is of size (256x128). There were however, 60 images within the training dataset that were inconsistent with these dimensions. These were removed and not implemented in the training of the model, owing to the fact that they constitute a very small proportion of the total test size, and also to avoid any unwanted artefacts being introduced with the re-sizing of these images. 
+These were the default provided train/test/validation splits within the native data directory on the Rangpur cluster. Each image is of size (256x128). There were however, 60 images within the training dataset that were inconsistent with these dimensions. These were removed and not implemented in the training of the model, owing to the fact that they constitute a very small proportion of the total test size, and also to avoid any unwanted artefacts being introduced with the re-sizing of these images. 
 
-** Justify the training, validation and testing spits of the data ** 
+This project utilised unsupervised learning and did not solve a classification problem, as there were no classes or labels in the available data. Therefore, the potential problem of class imbalance was not relevant, and there was no need to consider an alternative train/test split. 
 
 ## Usage
 
 Prerequisites for usage: 
 * a GPU-enabled hardware or environment
-* a suitable Python environment to meet the dependencies/versioning listed above, in Table 1. 
+* a suitable Python environment to meet the package dependencies/versioning listed above, in *Table 1*. 
 - predict.py
 - train.py
 i.e. which commands to run
-- Adjust parameters in `config.py` if necessary.
-- Run `python train.py` to train model.
+- Adjust parameters in `config.py` if necessary. Set `plot_metrics` parameter to True if you wish to visualise reconstructions and plot losses, SSIMs etc. 
+- Run `python train.py` to train model. All hyperparameters from `config` are imported into `train.py`.
 
 The project was run on the Rangpur cluster, using an Nvidia A100 GPU for computations. Data is located in the following directories: 
 
@@ -171,22 +171,19 @@ To address data leakage, I have assumed that individuals were *not* repeated acr
 
 ## References
 
-Sayash Kapoor, Arvind Narayanan,
-Leakage and the reproducibility crisis in machine-learning-based science,
-Patterns,
-Volume 4, Issue 9,
-2023,
-100804,
+[1]: A. van den Oord, O. Vinyals, and K. Kavukcuoglu, (2017), "Neural Discrete Representation Learning". arXiv:1711.00937
 
-vqvaeref: A. van den Oord, O. Vinyals, and K. Kavukcuoglu, "Neural Discrete Representation Learning". arXiv:1711.00937
+[2]: A. van den Oord, N. Kalchbrenner, O. Vinyals, L. Espeholt, A. Graves, and K. Kavukcuoglu, (2016), "Conditional Image Generation with PixelCNN Decoders". arXiv:1606.05328
 
-pixelcnn ref: A. van den Oord, N. Kalchbrenner, O. Vinyals, L. Espeholt, A. Graves, and K. Kavukcuoglu, "Conditional Image Generation with PixelCNN Decoders". arXiv:1606.05328
+[3]: Z. Wang, A. C. Bovik, H. R. Sheikh and E. P. Simoncelli, (2004), "Image quality assessment: from error visibility to structural similarity". IEEE Transactions on Image Processing, 13(4), pp. 600-612.
 
-ssimref: Zhou Wang, A. C. Bovik, H. R. Sheikh and E. P. Simoncelli, "Image quality assessment: from error visibility to structural similarity," in IEEE Transactions on Image Processing, vol. 13, no. 4, pp. 600-612, April 2004, doi: 10.1109/TIP.2003.819861.
+[4]: J. Dowling, and P., Greer, (2021), "Labelled weekly MR images of the male pelvis". v2. CSIRO. Data Collection. https://doi.org/10.25919/45t8-p065
 
-dataref: Dowling, et al. (2015), Automatic Substitute Computed Tomography Generation and Contouring for Magnetic Resonance Imaging (MRI)-Alone External Beam Radiation Therapy From Standard MRI Sequences, International Journal of Radiation Oncology*Biology*Physics, 93(5), pp. 1144-1153,
+[5]: J. Dowling, J. Sun, P. Pichler, D. Rivest-Hénault, S. Ghose, H. Richardson, C. Wratten, J. Martin, J. Arm, L. B, S. Chandra, J. Fripp, F. Menk, P. Greer, (2015), "Automatic Substitute Computed Tomography Generation and Contouring for Magnetic Resonance Imaging (MRI)-Alone External Beam Radiation Therapy From Standard MRI Sequences". International Journal of Radiation Oncology, Biology, Physics, 93(5), pp. 1144-1153.
 
-data itself: Dowling, Jason; & Greer, Peter (2021): Labelled weekly MR images of the male pelvis. v2. CSIRO. Data Collection. https://doi.org/10.25919/45t8-p065
+[6]: S. Kapoor, A. Narayanan, (2023), "Leakage and the reproducibility crisis in machine-learning-based science". Patterns, 4(9), 100804.
+
+
 
 
 
