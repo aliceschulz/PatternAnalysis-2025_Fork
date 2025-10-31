@@ -1,4 +1,4 @@
-# VQVAE for HipMRI Image Reconstruction
+# VQVAE for HipMRI Image Reconstruction and Generation
 
 The objective of this project was to solve a recognition problem using a deep learning method. This folder includes the solution and scripts for implementing the topic number 10 of the COMP3710 Project.
 
@@ -49,29 +49,32 @@ Outlined here are the versions used within this VQVAE implementation, and their 
 
 Overall, a VQVAE aims to address the 'posterior collapse' problem that may occur in traditional Variational Auto-Encoders (VAEs) by allow a learnt representation of discrete embeddings, rather than modelling a continuous latent space [1]. There are two components to the project overall: the VQVAE, and the PixelCNN which functions as an autoregressive prior to enable image generation [1]. 
 
-Each component is as follows:
+A high-level overview of the architecture of the VQVAE, and each component, is provided here:
+![VQVAE_Architecture](plots/Model_architecture_overview.png)
+
+Each component functions as follows:
 
 ### Encoder
 
-An encoder network outputs discrete codes/embeddings. Similar to a traditional encoder, it functions by taking in the image input data, and through a series of convolutional sampling, results in a different representation by extracting features from the input data. To increase accuracy, this encoder implements residual connections through the use of residual blocks. The encoder makes use of residual stacks, which are a series of residual blocks (the number of which is given by num_resid_layers).
+An encoder network outputs discrete codes/embeddings. Similar to a traditional encoder, it functions by taking in the image input data $x$, and through a series of convolutional sampling, results in a different representation by extracting features from the input data. To increase accuracy, this encoder implements residual connections through the use of residual blocks. The encoder makes use of residual stacks, which are a series of residual blocks (the number of which is given by num_resid_layers). This project's implementation of the encoder consists of two convolutional layers with a kernel size of 4x4, each followed by a ReLU activation, and then an additional convolution layer with a 3x3 kernel followed by a residual stack. 
 
 ### Vector Quantiser
 
-The Vector Quantiser helps to represent the discrete latent space that is learnt by the VQVAE and that can capture important features of the data in an unsupervised manner. Outputs from the encoder are entered into the vector quantiser, which then uses a nearest neighbour lookup to identify the closest embedding vector within the space. The latent embedding space is of dimension $\mathbb{R}^{K \times D}$ where $K$ is the size of the latent space (i.e., the number of embeddings), and $D$ is the dimensionality of each embedding vector (i.e., the embedding dimensions). 
+The Vector Quantiser helps to represent the discrete latent space that is learnt by the VQVAE and that can capture important features of the data in an unsupervised manner. Outputs $z_e(x)$ from the encoder are entered into the vector quantiser, which then uses a nearest neighbour lookup to identify the closest embedding vector within the space. The latent embedding space is of dimension $\mathbb{R}^{K \times D}$ where $K$ is the size of the latent space (i.e., the number of embeddings), and $D$ is the dimensionality of each embedding vector (i.e., the embedding dimensions). 
 Embeddings are represented by the class nn.Embedding, which functions as a simple lookup table that maps an index value to a weight matrix. During training, the parameters of this embedding layer are adjusted, with the embedding matrix (also known as codebook) being updated via backpropagation to minimise the loss function. Embedding weights were initialised using a uniform distribution, to avoid starting with any bias. 
-
-### Vector Quantiser prior
-
-The prior in the VQVAE case is learnt rather than static, and it is trained over the discrete latent space. In the original VQVAE implementation, an autoregressive prior was used [1]. The purpose of training a 'prior' distribution is to enable generation, once the discrete latent structure has been learnt by the VQVAE [1].
 
 ### Decoder
 
-As input, the decoder takes the embedding vector identified by the vector quantiser. Through another series of convolutions, the input is sampled until the final output is produced. Similar to the encoder, residual connections are implemented through the use of stacks of residual blocks. A final sigmoid activation function was utilised as the final layer of the decoder. This is to maintain consistency with the data pre-processing that was utilised; as datasets were standardised to be in [0,1] (which is the range of nn.Sigmoid()).
+As input, the decoder takes $z_q(x)$, the embedding vector identified by the vector quantiser. Through another series of convolutions, the input is sampled until the final output is produced. Similar to the encoder, residual connections are implemented through the use of stacks of residual blocks. A final sigmoid activation function was utilised as the final layer of the decoder. This is to maintain consistency with the data pre-processing that was utilised; as datasets were standardised to be in [0,1] (which is the range of nn.Sigmoid()).
+
+### Vector Quantiser prior - PixelCNN
+
+The prior $p(z)$ in the VQVAE case is learnt rather than static, and it is trained over the discrete latent space. In the original VQVAE implementation, an autoregressive prior (PixelCNN) was used [1]. The purpose of training a 'prior' distribution is to enable generation, once the discrete latent structure has been learnt by the VQVAE [1].
 
 ### PixelCNN
 
-The PixelCNN is a model that learns to model the prior, and is used for generation. For image generation, it generates every new pixel sequentially, one at a time, and on the basis of (conditioned on) previous pixels it has generated [2]. It uses masked convolutions, in order to set connections to any future pixels to zero, such that the model cannot 'see' these.
-To sample from the latent space, the trained PixelCNN is fit over the latent values. 
+The PixelCNN is a model that learns to model the prior, and is used for generation. For image generation, it generates every new pixel sequentially, one at a time, and on the basis of (conditioned on) previous pixels it has generated [2]. It uses masked convolutions, in order to set connections to any future pixels to zero, such that the model cannot 'see' these. Two different types of masks are implemented in the PixelCNN class - these include mask 'A' which is utilised for the very first layer and masks out the current pixel as well as all subsequent pixels, and mask 'B' for all subsequent layers, which zeros out all future pixels but not the current pixel.
+To sample from the latent space, the trained PixelCNN is fit over the latent values. The PixelCNN returns probabilities for each pixel.
 
 ### Loss
 
@@ -83,9 +86,11 @@ $$ L_{VQVAE} = \log p(x | z_q(x)) + \lvert \text{sg}[z_e(x)] - e\rvert_2^2 + \be
 
 In terms of measuring reconstruction fidelity, the Structural Similarity Index (SSIM) was used. This is a framework for assessing the similarity and visibility of differences between a 'distorted' image and a reference image, based on the degradation of or change in structural information [3]. It holds a benefit over other metrics as it takes texture and structural information into account, and incorporates perceptual phenomena such as luminance and contrast [3]. In the case of this project, the SSIM is measured in reference to the original uncompressed/unedited HipMRI image. 
 
+For PixelCNN training, the cross-entropy loss was used, as the pixel 'classification' is considered a multi-class problem. 
+
 ### Optimiser, and optimisation process
 
-The optimisation process utilises the Straight Through Estimator trick [4]. As the latent space is discretised, gradients are not well-defined and so the backpropagation of gradients may fail. This step is required to allow backpropagation, by allowing the gradients to pass directly from the decoder input to the encoder output, skipping the non-differentiable vector-quantised component. 
+The optimisation process utilises the Straight Through Estimator trick [4], which is implemented as part of the VectorQuantiser forward pass. As the latent space is discretised, gradients are not well-defined and so the backpropagation of gradients may fail. This step is required to allow backpropagation, by allowing the gradients to pass directly from the decoder input to the encoder output, skipping the non-differentiable vector-quantised component. 
 
 The optimiser of choice was the Adaptive Moment Estimator (Adam) [5] for both the VQVAE and PixelCNN, due to its computational efficiency and favourable performance. It combines an adaptive learning rate with momentum. 
 
@@ -159,7 +164,7 @@ The top row of these images display the original data inputs, i.e. the original 
 
 ![Epoch1](plots/VQVAE_recon_epoch1.png)
 ![Epoch16](plots/VQVAE_recon_epoch16.png)
-![Epoch45](plots/VQVAE_recon_epoch45.png)
+![Epoch45](plots/VQVAE_recon_epoch36.png)
 
 #### Generation
 
@@ -168,7 +173,7 @@ Generation was completed by pairing the trained VQVAE model with an autoregressi
 ![Epoch50](plots/VQVAE_gen_epoch50.png)
 
 For other generations, see here:
-[Epoch1](plots/VQVAE_gen_epoch1.png)
+[Epoch1](plots/VQVAE_gen_epoch1.png), 
 [Epoch10](plots/VQVAE_gen_epoch10.png)
 
 ## Other notes/assumptions
